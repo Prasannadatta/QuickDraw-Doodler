@@ -44,8 +44,9 @@ def render_image_data(strokes, out_img_size):
     # return img as np array
     return np.array(image, dtype=np.uint8)
 
-def test_display_img(img):
+def test_display_img(img, label):
     plt.imshow(img, cmap='gray')
+    plt.title(f"Label: {label}")
     plt.axis('off')
     plt.show()
 
@@ -120,12 +121,38 @@ def load_data(subset_labels, data_mode, num_samples_per_class, data_dir="quickdr
     Returns:
         dict: A dictionary containing prepared 'images' and optionally 'strokes' if in full mode.
     """
-    # Total samples across all classes
+    print("**LOADING DATA FROM .npy FILES")
     total_samples = num_samples_per_class * len(subset_labels)
     
-    # Determine image dimensions based on mode
-    image_data_dim = (num_samples_per_class, 28,28) if data_mode == DataMode.SIMPLIFIED else (num_samples_per_class, 256,256)
+    # image dimensions based on datamode
+    image_data_dim = (total_samples, 28,28) if data_mode == DataMode.SIMPLIFIED else (total_samples, 256,256)
     
-    # Pre-allocate arrays for images and optionally for strokes
-    images = np.empty(image_data_dim, dtype=np.uint8)
-    strokes = np.empty(total_samples, dtype=object) if data_mode == 'full' else None
+    # allocate arrays for images/labels and optionally for strokes
+    images = np.empty(image_data_dim, dtype=np.float32)
+    labels = np.empty(total_samples, dtype=np.uint8)
+    strokes = np.empty(total_samples, dtype=object) if data_mode == DataMode.FULL else None
+
+    for i, class_name in enumerate(subset_labels):
+        # get file path and load .npy file
+        cur_data_dir = f"{data_dir}{data_mode.value}/{class_name}.npy"
+        data = np.load(cur_data_dir, allow_pickle=True).item()
+        
+        # slice indices for this class
+        start_idx = i * num_samples_per_class
+        end_idx = start_idx + num_samples_per_class
+
+        # load images and normalize pixel values to [0, 1] range
+        images[start_idx:end_idx] = data['images'][:num_samples_per_class] / 255.0
+        labels[start_idx:end_idx] = i # label images by index
+
+        # if in full mode load strokes as well
+        if data_mode == DataMode.FULL and 'strokes' in data:
+            strokes[start_idx:end_idx] = data['strokes'][:num_samples_per_class]
+
+    # data dict
+    prepared_data = {'images': images, 'labels': labels}
+    if data_mode == DataMode.FULL:
+        prepared_data['strokes'] = strokes
+
+    print(f"Loaded and prepared {total_samples} images with labels for model training (data mode: {data_mode})")
+    return prepared_data
