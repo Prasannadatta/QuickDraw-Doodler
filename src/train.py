@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from data import gather_data, parse_data
+from data import gather_train_data, parse_train_data
 
-def train_model():
+def handle_model_training():
     pass

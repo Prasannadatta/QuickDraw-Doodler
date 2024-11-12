@@ -1,8 +1,8 @@
 import argparse
 
-from src.infer import train_model
-from src.generate import train_model
-from src.model import train_model
+from src.infer import handle_doodle_inferring
+from src.generate import handle_doodle_generation
+from src.train import handle_model_training
 
 def get_args():
     parser = argparse.ArgumentParser(description="Choose method for using QuickDraw Doodler: inferring, generating, or training on drawings")
@@ -18,10 +18,10 @@ def get_args():
     args = parser.parse_args()
 
     if args.mode == 'infer':
-        pass
+        handle_doodle_inferring()
 
     if args.mode == 'generate':
-        pass
+        handle_doodle_generation()
 
     if args.mode == 'train':
-        train_model()
+        handle_model_training()
