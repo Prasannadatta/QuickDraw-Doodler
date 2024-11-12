@@ -10,7 +10,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from data import gather_train_data, parse_train_data
+from src.data import download_data, load_data
 
-def handle_model_training():
-    pass
+from utils.types import DataMode
+
+
+def handle_model_training(subset_labels, data_mode, num_samples_per_class):
+    download_data(subset_labels, data_mode, num_samples_per_class) # download data if not already
+    load_data(subset_labels, data_mode, num_samples_per_class) # grab and parse .npy files (one file for each class)

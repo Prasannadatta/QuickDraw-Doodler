@@ -3,5 +3,6 @@ torchvision
 torchsumamry
 quickdraw
 matplotlib
+pillow
 numpy
 tqdm

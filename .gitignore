@@ -1,4 +1,6 @@
-quickdraw_data/*
+quickdraw_data/full/*
+quickdraw_data/simplified/*
+.quickdrawcache
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
