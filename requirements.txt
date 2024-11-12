@@ -1,0 +1,7 @@
+torch
+torchvision
+torchsumamry
+quickdraw
+matplotlib
+numpy
+tqdm
