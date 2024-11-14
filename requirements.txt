@@ -1,8 +1,9 @@
 torch
 torchvision
-torchsumamry
+torchinfo
 quickdraw
 matplotlib
 pillow
 numpy
+opencv-python
 tqdm

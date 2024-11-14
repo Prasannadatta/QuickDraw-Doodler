@@ -1,14 +1,12 @@
 import argparse
 import numpy as np
+import json
 
 from src.infer import handle_doodle_inferring
 from src.generate import handle_doodle_generation
 from src.train import handle_model_training
 
 from utils.types import DataMode
-
-# 10 of the available 300 classes for training we will start with as a subset for testing, maybe more if desired.
-subset_labels = ["cat", "dog", "car", "tree", "house", "flower", "fish", "star", "apple", "face"]
 
 # set seed globally to apply everywhere
 np.random.seed(123)
@@ -18,7 +16,7 @@ def main():
 
     # operation mode
     parser.add_argument(
-        '--mode', 
+        '-m', '--mode', 
         choices=['infer', 'generate', 'train'], 
         required=True, 
         help="Choose the operation mode: 'infer' to perform inference on a drawing, 'generate' to create a new drawing, or 'train' to train on drawing data"
@@ -26,7 +24,7 @@ def main():
 
     # data mode for training
     parser.add_argument(
-        '--data_mode',
+        '-dm', '--data_mode',
         type=DataMode,
         choices=list(DataMode),
         default=DataMode.FULL,
@@ -35,13 +33,19 @@ def main():
 
     # number of samples to get/use per class
     parser.add_argument(
-        '--num_samples_per_class',
+        '-nspc', '--num_samples_per_class',
         type=int,
         default=2000,
         help="Specify how many samples to use for training."
     )
 
     args = parser.parse_args()
+
+    # of the available 354 classes for training we will start with as a subset for testing
+    with open("config/subset_classes.json", 'r') as subset_file:
+        subset_dict = json.load(subset_file)
+        print(subset_dict)
+        subset_labels = subset_dict[args.data_mode.value]
 
     if args.mode == 'infer':
         handle_doodle_inferring()
