@@ -39,6 +39,14 @@ def main():
         help="Specify how many samples to use for training."
     )
 
+    # model selection
+    parser.add_argument(
+        '-nspc', '--num_samples_per_class',
+        type=int,
+        default=2000,
+        help="Specify how many samples to use for training."
+    )
+
     args = parser.parse_args()
 
     # of the available 354 classes for training we will start with as a subset for testing
@@ -54,7 +62,7 @@ def main():
         handle_doodle_generation()
 
     if args.mode == 'train':
-        handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class)
+        handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type)
 
 if __name__ == '__main__':
     main()

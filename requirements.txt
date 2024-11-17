@@ -3,6 +3,7 @@ torchvision
 torchinfo
 quickdraw
 matplotlib
+datasets
 pillow
 numpy
 opencv-python
