@@ -285,7 +285,7 @@ def load_stroke_data(subset_labels, data_mode, num_samples_per_class, data_dir="
 
     return drawings, labels
 
-def normalize_stroke_data(data):
+def local_normalize_stroke_data(data):
     norm_data = np.empty(data.shape[0], dtype=object)
     stats = []  # List to store min and max values for x, y, and t for each sample
     for i, sample in enumerate(data):
@@ -307,11 +307,11 @@ def normalize_stroke_data(data):
         t_norm = (t - t_min) / t_range
 
         # absolute values not necessary to process sequential inputs
-        dx = np.diff(x_norm, prepend=x_norm[0])
-        dy = np.diff(y_norm, prepend=y_norm[0])
-        dt = np.diff(t_norm, prepend=t_norm[0])
+        dx = np.diff(x_norm, prepend=x_norm[0]).astype(np.float32)
+        dy = np.diff(y_norm, prepend=y_norm[0]).astype(np.float32)
+        dt = np.diff(t_norm, prepend=t_norm[0]).astype(np.int16)
 
-        norm_data[i] = np.stack([dx, dy, dt, p], axis=1)
+        norm_data[i] = np.stack([dx, dy, dt, p], axis=0)
 
         stats.append({'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max, 't_min': t_min, 't_max': t_max})
 
