@@ -6,7 +6,7 @@ from src.infer import handle_doodle_inferring
 from src.generate import handle_doodle_generation
 from src.train import handle_model_training
 
-from utils.types import DataMode
+from utils.types import DataMode, ModelType
 
 # set seed globally to apply everywhere
 np.random.seed(123)
@@ -41,10 +41,11 @@ def main():
 
     # model selection
     parser.add_argument(
-        '-nspc', '--num_samples_per_class',
-        type=int,
-        default=2000,
-        help="Specify how many samples to use for training."
+        '-mt', '--model_type',
+        type=ModelType,
+        choices=list(ModelType),
+        default=ModelType.RNN,
+        help="Choose the type of model to train, generate from, or infer on. "
     )
 
     args = parser.parse_args()

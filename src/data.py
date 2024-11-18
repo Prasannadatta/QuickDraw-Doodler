@@ -140,35 +140,67 @@ def download_stroke_data(subset_labels, data_mode, num_samples_per_class, data_d
         cache_dir=cache_dir
     )
 
-    # np dtype
-    drawing_dtype = np.dtype([
-        ('x', 'O'),  # stores variable-length arrays
-        ('y', 'O'),
-        ('t', 'O')
-    ])
-
     for label in missing_labels: # iterate through labels
         label_path = os.path.join(data_dir, f"{label}.npy") # combine label and data directory to make data file path
         
-        i = 0
+        sample_idx = 0
         print(f"Assembling {label} data...")
-        drawings_arr = np.empty(num_samples_per_class, dtype=drawing_dtype)
+        drawings_arr = np.empty(num_samples_per_class, dtype=object)
         for sample in dataset[label]: # iterate through samples in labels
-            if not (sample["recognized"] and len(sample["drawing"]) == 3):
+            # ensure sample recognized, there's at least one stroke, and all strokes have x, y, and t
+            if not (sample["recognized"] and len(sample["drawing"]) >= 1  and all(len(stroke) == 3 for stroke in sample["drawing"])):
                 continue
 
             drawing_data = sample['drawing']
 
-            # grab x, y, and t for each sample and convert to np arr
-            x = np.array(drawing_data[0], dtype=np.float32)
-            y = np.array(drawing_data[1], dtype=np.float32)
-            t = np.array(drawing_data[2], dtype=np.int32)
+            # includes pen up points that will be inserted
+            total_points = sum(len(stroke[0]) for stroke in drawing_data) + (len(drawing_data) - 1)
 
-            drawings_arr[i] = (x, y, t)
-            i+=1
+            x = np.empty(total_points, dtype=np.float32)
+            y = np.empty(total_points, dtype=np.float32)
+            t = np.empty(total_points, dtype=np.int32)
+            p = np.empty(total_points, dtype=np.uint8)
 
-            if i >= num_samples_per_class:
-                i == 0
+            point_idx = 0
+            for stroke_idx, stroke in enumerate(drawing_data):
+                num_points_in_stroke = len(stroke[0])
+
+                # insert a pen-up point if not the first stroke
+                if stroke_idx > 0:
+                    # Insert pen-up point (repeats last point of previous stroke)
+                    x[point_idx] = x[point_idx - 1]
+                    y[point_idx] = y[point_idx - 1]
+                    t[point_idx] = t[point_idx - 1] + 1  # increment timestamp
+                    p[point_idx] = 2  # Pen up
+                    point_idx += 1
+
+                # get current stroke points in arr
+                x_stroke = np.array(stroke[0], dtype=np.float32)
+                y_stroke = np.array(stroke[1], dtype=np.float32)
+                t_stroke = np.array(stroke[2], dtype=np.int32)
+
+                # Pen state array for the current stroke
+                p_stroke = np.ones(num_points_in_stroke, dtype=np.uint8)  # pen down
+                if stroke_idx == 0:
+                    p_stroke[0] = 0  # pen start
+                else:
+                    p_stroke[0] = 1  # pen down after pen up
+
+                # assign stroke points to collective stroke arrays
+                x[point_idx:point_idx + num_points_in_stroke] = x_stroke
+                y[point_idx:point_idx + num_points_in_stroke] = y_stroke
+                t[point_idx:point_idx + num_points_in_stroke] = t_stroke
+                p[point_idx:point_idx + num_points_in_stroke] = p_stroke
+
+                point_idx += num_points_in_stroke
+            
+            # last pen state is pen end
+            p[point_idx - 1] = 3
+
+            drawings_arr[sample_idx] = np.stack([x[:point_idx], y[:point_idx], t[:point_idx], p[:point_idx]])
+            
+            sample_idx+=1
+            if sample_idx >= num_samples_per_class:
                 break
         
         # saved class data as npy
@@ -234,11 +266,7 @@ def load_stroke_data(subset_labels, data_mode, num_samples_per_class, data_dir="
     total_samples = num_samples_per_class * len(subset_labels)
 
     # Initialize numpy arrays for drawings and labels
-    drawings = np.empty(total_samples, dtype=np.dtype([
-        ('x', 'O'),
-        ('y', 'O'),
-        ('t', 'O')
-    ]))
+    drawings = np.empty(total_samples, dtype=object)
     labels = np.empty(total_samples, dtype=np.uint8)
 
     for i, label in enumerate(subset_labels):
@@ -256,3 +284,61 @@ def load_stroke_data(subset_labels, data_mode, num_samples_per_class, data_dir="
     print(f"Loaded and prepared {total_samples} drawings with labels for model training (data mode: {data_mode})")
 
     return drawings, labels
+
+def normalize_stroke_data(data):
+    norm_data = np.empty(data.shape[0], dtype=object)
+    stats = []  # List to store min and max values for x, y, and t for each sample
+    for i, sample in enumerate(data):
+        x, y, t, p = sample
+        x_min, x_max = x.min(), x.max()
+        y_min, y_max = y.min(), y.max()
+        t_min, t_max = t.min(), t.max()
+
+        # edge cases if the min ever equals max (vert or hor lines)
+        x_range = x_max - x_min if x_max - x_min != 0 else 1e-6
+        y_range = y_max - y_min if y_max - y_min != 0 else 1e-6
+        t_range = t_max - t_min if t_max - t_min != 0 else 1e-6
+
+        # normalize x and y to edges of bbox (xmax and ymax)
+        # x, y are normalized before finding deltas to ensure scale consistency with bbox
+        # t normalized before deltas to ensure temproal dynamics are relative to other strokes, not other drawings
+        x_norm = (x - x_min) / x_range
+        y_norm = (y - y_min) / y_range
+        t_norm = (t - t_min) / t_range
+
+        # absolute values not necessary to process sequential inputs
+        dx = np.diff(x_norm, prepend=x_norm[0])
+        dy = np.diff(y_norm, prepend=y_norm[0])
+        dt = np.diff(t_norm, prepend=t_norm[0])
+
+        norm_data[i] = np.stack([dx, dy, dt, p], axis=1)
+
+        stats.append({'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max, 't_min': t_min, 't_max': t_max})
+
+    return norm_data, stats
+
+def unnormalize_stroke_data(norm_data, stats):
+    unnorm_data = np.empty(norm_data.shape[0], dtype=object)
+    for i, sample in enumerate(norm_data):
+        dx, dy, dt, p = sample[:, 0], sample[:, 1], sample[:, 2], sample[:, 3]
+        x_min, x_max = stats[i]['x_min'], stats[i]['x_max']
+        y_min, y_max = stats[i]['y_min'], stats[i]['y_max']
+        t_min, t_max = stats[i]['t_min'], stats[i]['t_max']
+
+        x_range = x_max - x_min if x_max - x_min != 0 else 1e-6
+        y_range = y_max - y_min if y_max - y_min != 0 else 1e-6
+        t_range = t_max - t_min if t_max - t_min != 0 else 1e-6
+
+        # reconstruct normalized positions from deltas
+        x_norm = np.cumsum(dx)
+        y_norm = np.cumsum(dy)
+        t_norm = np.cumsum(dt)
+
+        # unnormalize the positions
+        x = x_norm * x_range + x_min
+        y = y_norm * y_range + y_min
+        t = t_norm * t_range + t_min
+
+        unnorm_data[i] = np.stack([x, y, t, p], axis=0)
+        
+    return unnorm_data

@@ -1,26 +1,35 @@
 import cv2
 import numpy as np
 
-def full_strokes_to_vector_images(full_strokes):
+def full_strokes_to_vector_images(sample):
     """
-    Converts vector images from the 'full' format to the 'simplified' format efficiently using NumPy.
+    Converts a sample from 'full' stroke format to the format expected by vector_to_raster.
 
     Parameters:
-    - full_strokes: List of vector images in 'full' format, where each vector image is a list of strokes,
-      and each stroke is a list containing [x_values], [y_values], [t_values].
+    - sample: A single sample from the dataset, which is a NumPy array of shape (4, N),
+      where the rows are x, y, t, p.
 
     Returns:
-    - vector_images_simplified: List of vector images in simplified format, where each vector image is a list of strokes,
-      and each stroke is a NumPy array of shape (n_points, 2).
+    - simplified_image: A list of strokes, where each stroke is a NumPy array of shape (n_points, 2).
     """
+    x, y, t, p = sample  # extract the components
+    x = x.astype(np.float32)
+    y = y.astype(np.float32)
+    p = p.astype(np.uint8)
+
     simplified_image = []
-    for stroke in full_strokes:
-        # Extract x and y values as NumPy arrays
-        x_values = np.array(stroke[0], dtype=np.float32)
-        y_values = np.array(stroke[1], dtype=np.float32)
-        # Stack x and y into a (n_points, 2) array
-        points = np.stack((x_values, y_values), axis=-1)
-        simplified_image.append(points)
+    current_stroke = []
+
+    for idx in range(len(p)):
+        if p[idx] == 0 or p[idx] == 1:
+            # pen is down or pen start, add point to current stroke
+            current_stroke.append([x[idx], y[idx]])
+        elif p[idx] == 2 or p[idx] == 3:
+            # pen up or pen end, add point to current stroke and save it
+            current_stroke.append([x[idx], y[idx]])
+            simplified_image.append(np.array(current_stroke, dtype=np.float32))
+            current_stroke = []  # Reset current stroke
+
     return simplified_image
 
 def vector_to_raster(
@@ -34,13 +43,12 @@ def vector_to_raster(
     ):
     """
     Convert squared vector images to square raster images using OpenCV.
-    Takes in stroke data of quickdraw stroke data and renders it.
-    Additionally will center the doodle in the output image and scale down applying antialiasing in the process
+    Takes in stroke data and renders it.
+    Additionally centers the doodle in the output image and scales down applying antialiasing in the process.
     
     Parameters:
     - vector_images: List of vector images, where each vector image is a list of strokes,
-      and each stroke is a list of (x, y) tuples.
-    - data_mode: enum indicating if full stroke data or simplified (different input data format)
+      and each stroke is a NumPy array of shape (n_points, 2).
     - in_size: The size of the square input image (width and height).
     - out_size: The size of the square output image (width and height).
     - line_diameter: The thickness of the strokes.
@@ -58,33 +66,31 @@ def vector_to_raster(
 
     raster_images = np.zeros((len(vector_images), out_size, out_size), dtype=np.uint8)
     for i, vector_image in enumerate(vector_images):
-        # blank canvas with the background color (width, height, depth->rgb)
+        # blank canvas with the background color (height, width, channels)
         img = np.full((out_size, out_size, 3), bg_color, dtype=np.uint8)
 
         # collect all points and calculate bbox
-        all_points = np.concatenate([np.array(stroke, dtype=np.float32) for stroke in vector_image])
+        all_points = np.concatenate([stroke for stroke in vector_image if len(stroke) > 0])
         bbox_min = all_points.min(axis=0)
         bbox_max = all_points.max(axis=0)
         bbox_center = (bbox_min + bbox_max) / 2.0
-        img_center = in_size / 2.0
+        img_center = np.array([out_size / 2.0, out_size / 2.0])
 
-        # offset to center the strokes
-        offset = img_center - bbox_center
-
-        # translation and scaling factor of individual strokes
-        translation = (offset + total_padding / 2.0) * new_scale
+        # scaling factor
+        scale = (out_size - total_padding) / max(bbox_max - bbox_min)
+        scale *= 0.95  # Slightly reduce scale to fit within the image
 
         # draw strokes with anti-aliasing
         for stroke in vector_image:
-            stroke_array = np.array(stroke, dtype=np.float32)
-
-            # translate and scale all vectors (strokes)
-            transformed_stroke = stroke_array * new_scale + translation
+            if len(stroke) == 0:
+                continue
+            # center and scale the stroke
+            transformed_stroke = (stroke - bbox_center) * scale + img_center
             pts = transformed_stroke.astype(np.int32).reshape((-1, 1, 2))
             cv2.polylines(img, [pts], isClosed=False, color=fg_color,
                           thickness=thickness, lineType=cv2.LINE_AA)
 
-        # Convert to grayscale
+        # convert to grayscale
         img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         raster_images[i] = img_gray
 

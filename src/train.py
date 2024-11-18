@@ -10,13 +10,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from src.data import download_stroke_data, download_img_data, load_simplified_data, load_stroke_data, test_display_img
+from src.data import download_stroke_data, download_img_data, load_simplified_data, load_stroke_data, test_display_img, normalize_stroke_data, unnormalize_stroke_data
 from src.models import cnn, tcn, gan, rnn
 from utils.image_processing import vector_to_raster, full_strokes_to_vector_images
 from utils.types import DataMode, ModelType
 
 
 def handle_model_training(subset_labels, data_mode, num_samples_per_class, model_type):
+    print(data_mode, model_type)
+    
     # map label names to idxs
     label_map = {label: i for i, label in enumerate(subset_labels)}
 
@@ -41,6 +43,9 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
     
     
 def train_generator(X, y, subset_labels, model_type):
+    X, stats = normalize_stroke_data(X)
+    X = unnormalize_stroke_data(X, stats)
+    
     # ensure data loaded properly by inspecting an image or two
     rand_idxs = np.random.randint(0, X.shape[0], 10) 
     for rand_idx in rand_idxs:
@@ -49,13 +54,16 @@ def train_generator(X, y, subset_labels, model_type):
         test_img = vector_to_raster([X_vec], in_size=in_size, out_size=256, line_diameter=8, padding=4)[0]
         test_display_img(test_img, subset_labels[y[rand_idx]], rand_idx)
 
+    print(X[0], y[0], X.shape)
+
     if model_type == ModelType.TCN:
         tcn.train_tcn(X, y)        
 
-    if model_type == ModelType.RNN:
-        rnn.train_rnn(X, y) 
+    elif model_type == ModelType.RNN:
+        Xnorm, _ = normalize_stroke_data(X)
+        rnn.train_rnn(Xnorm, y)
 
-    if model_type == ModelType.GAN:
+    elif model_type == ModelType.GAN:
         gan.train_gan(X, y) 
 
     else:
