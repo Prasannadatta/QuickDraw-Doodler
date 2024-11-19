@@ -11,7 +11,7 @@ from src.process_data import init_sequential_dataloaders
     
 class DoodleRNN(nn.Module):
     def __init__(self, in_size, hidden_size, num_layers, num_classes, dropout=0.2):
-        super(DoodleRNN, self).__init()
+        super(DoodleRNN, self).__init__()
 
         self.lstm = nn.LSTM(
             input_size=in_size,

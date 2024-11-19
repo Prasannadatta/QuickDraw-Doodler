@@ -24,7 +24,7 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
 
     # y is always the class label as an index following the label map
     if data_mode == DataMode.FULL: # x is stroke data with temporal aspect
-        train_generator(X, y, subset_labels, model_type)
+        train_generator(X, y, subset_labels, model_type, device)
 
     # if data_mode == simplified: x is 255x255 final image data
     if data_mode == DataMode.SIMPLIFIED: # x is 255x255 final image data
