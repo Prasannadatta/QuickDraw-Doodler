@@ -1,12 +1,12 @@
 import argparse
 import numpy as np
 import json
+import torch
 
 from src.infer import handle_doodle_inferring
 from src.generate import handle_doodle_generation
 from src.train import handle_model_training
-
-from utils.types import DataMode, ModelType
+from src.enum_types import DataMode, ModelType
 
 # set seed globally to apply everywhere
 np.random.seed(123)
@@ -56,6 +56,8 @@ def main():
         print(subset_dict)
         subset_labels = subset_dict[args.data_mode.value]
 
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
     if args.mode == 'infer':
         handle_doodle_inferring()
 
@@ -63,7 +65,7 @@ def main():
         handle_doodle_generation()
 
     if args.mode == 'train':
-        handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type)
+        handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type, device)
 
 if __name__ == '__main__':
     main()

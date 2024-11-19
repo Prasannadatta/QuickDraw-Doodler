@@ -6,7 +6,7 @@ import cv2
 from datasets import load_dataset, Features, ClassLabel, Value, Sequence
 import os
 
-from src.data import vector_to_raster
+from get_data import vector_to_raster
 
 def test_display_img(img, label):
     plt.imshow(img, cmap='gray')

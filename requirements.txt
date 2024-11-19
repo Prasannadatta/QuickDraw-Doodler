@@ -4,6 +4,7 @@ torchinfo
 quickdraw
 matplotlib
 datasets
+scikit-learn
 pillow
 numpy
 opencv-python
