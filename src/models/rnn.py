@@ -13,7 +13,7 @@ from src.process_data import init_sequential_dataloaders
 from src.metrics_visualize import plot_generator_metrics, log_metrics
     
 class DoodleGenRNN(nn.Module):
-    def __init__(self, in_size, hidden_size, latent_size, num_layers, num_labels, dropout=0.2, use_fc_activations=False):
+    def __init__(self, in_size, enc_hidden_size, dec_hidden_size, latent_size, num_layers, num_labels, dropout=0.2, use_fc_activations=False):
         super(DoodleGenRNN, self).__init__()
 
         self.use_fc_activations = use_fc_activations
@@ -22,7 +22,7 @@ class DoodleGenRNN(nn.Module):
         # final hidden state of lstm defines the latent space
         self.lstm_encoder = nn.LSTM(
             input_size=in_size,
-            hidden_size=hidden_size,
+            hidden_size=enc_hidden_size,
             num_layers=num_layers,
             dropout=dropout,
             batch_first=True, # data is loaded with batch dim first (b, seq_len, points)
@@ -33,8 +33,8 @@ class DoodleGenRNN(nn.Module):
         # latent space -> compressed representation of input data to lower dimensional space
         # like convolutions grab most important features, this latent space will learn the same
         # essentially hidden lstm to latent space, but with reparameterizing to sample from gaussian dist of mean and var of hidden
-        self.hidden_to_mu_fc = nn.Linear(hidden_size * 2, latent_size) # * 2 for bidirectionality
-        self.hidden_to_logvar_fc = nn.Linear(hidden_size * 2, latent_size)
+        self.hidden_to_mu_fc = nn.Linear(enc_hidden_size * 2, latent_size) # * 2 for bidirectionality
+        self.hidden_to_logvar_fc = nn.Linear(enc_hidden_size * 2, latent_size)
 
         # embedding for the labels
         # maps discrete labels (idxs for sketch labels e.g. 1 for cat, 2 for tree),
@@ -43,16 +43,16 @@ class DoodleGenRNN(nn.Module):
         self.label_embedding = nn.Embedding(num_labels, latent_size)
 
         # decoder LSTM
-        self.latent_to_hidden_fc = nn.Linear(latent_size * 2, hidden_size)
+        self.latent_to_hidden_fc = nn.Linear(latent_size * 2, dec_hidden_size)
         self.lstm_decoder = nn.LSTM(
             input_size=in_size,
-            hidden_size=hidden_size,
+            hidden_size=dec_hidden_size,
             num_layers=num_layers,
             dropout=dropout,
             batch_first=True,
             bidirectional=False
         )
-        self.hidden_to_output_fc = nn.Linear(hidden_size, in_size)
+        self.hidden_to_output_fc = nn.Linear(dec_hidden_size, in_size)
 
         self.dropout_fc = nn.Dropout(dropout) # dropout layer
 
@@ -292,11 +292,12 @@ def train_rnn(
         y,
         subset_labels,
         device,
-        batch_size=32,
+        batch_size=64,
         num_epochs=5,
         lr=0.001,
-        alpha=0.8,
-        lstm_hidden_size=128, # TRY DIFFERENT ENC AND DEC SIZES
+        alpha=1.0,
+        enc_lstm_hidden_size=256,
+        dec_lstm_hidden_size=128,
         latent_size=64,
         num_lstm_layers=4,
         dropout=0.0,
@@ -308,7 +309,8 @@ def train_rnn(
 
     rnn = DoodleGenRNN(
         in_size=4, # 4 features -> dx, dy, dt, p
-        hidden_size=lstm_hidden_size, # num features in lstm hidden state
+        enc_hidden_size=enc_lstm_hidden_size, # num features in lstm hidden state
+        dec_hidden_size=dec_lstm_hidden_size, # num features in lstm hidden state
         latent_size=latent_size, # size of vector where new data for generation sampled from
         num_layers=num_lstm_layers, # num of stacked lstm layers
         num_labels=len(subset_labels), # num unique classes in dataset
@@ -337,7 +339,8 @@ def train_rnn(
         'num_labels': len(subset_labels),
         'num_samples_per_label': torch.unique(torch.tensor(y), return_counts=True)[1][0].item(),
         "num_total_samples": len(y),
-        "lstm_hidden_size": lstm_hidden_size,
+        "enc_hidden_size": enc_lstm_hidden_size,
+        "dec_hidden_size": dec_lstm_hidden_size,
         "latent_size": latent_size,
         "num_lstm_layers": num_lstm_layers,
         "kl_div_coeff": alpha,
