@@ -6,9 +6,11 @@ from torchinfo import summary
 
 from tqdm import tqdm
 from collections import defaultdict
+from datetime import datetime
+import os
 
 from src.process_data import init_sequential_dataloaders
-from src.metrics_visualize import plot_generator_metrics
+from src.metrics_visualize import plot_generator_metrics, log_metrics
     
 class DoodleGenRNN(nn.Module):
     def __init__(self, in_size, hidden_size, latent_size, num_layers, num_labels, dropout=0.2, use_fc_activations=False):
@@ -139,7 +141,7 @@ class DoodleGenRNN(nn.Module):
 def kl_div(Xbatch, mu, logvar):
     return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / Xbatch.size(0)
 
-def find_latent_smoothness(all_mus, device, num_pairs=20, steps=5):
+def find_latent_smoothness(all_mus, num_pairs=20, steps=5):
     if len(all_mus) < 2: # can only calculate distances between at least 2 points
         return 0  
 
@@ -182,7 +184,7 @@ def train(
     running_recon_train_loss, running_div_train_loss, running_total_train_loss = 0., 0., 0.
     latent_variances, unique_outputs, all_train_mus = [], [], []
     
-    train_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{num_epochs}")
+    train_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Training Epoch {epoch+1}/{num_epochs}")
     for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:
         # move data to gpu
         Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
@@ -232,7 +234,6 @@ def validate(
         num_epochs,
         val_loader,
         rnn,
-        optim,
         reconstruction_criterion,
         alpha, # scale how important kl_div loss is
         device,
@@ -244,7 +245,7 @@ def validate(
     running_recon_val_loss, running_div_val_loss, running_total_val_loss = 0., 0., 0.
     latent_variances, unique_outputs, all_val_mus = [], [], []
     
-    val_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{num_epochs}")
+    val_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Validating Epoch {epoch+1}/{num_epochs}")
     with torch.no_grad():
         for batch_idx, (Xbatch, seq_lens, ybatch) in val_bar:
             # move data to gpu
@@ -286,23 +287,65 @@ def validate(
     metrics['val']['unique_ratio'].append(sum(unique_outputs) / len(unique_outputs))
 
 
-def train_rnn(X, y, subset_labels, device, batch_size=32, num_epochs=5, lr=0.001, alpha=0.8):    
+def train_rnn(
+        X,
+        y,
+        subset_labels,
+        device,
+        batch_size=32,
+        num_epochs=5,
+        lr=0.001,
+        alpha=0.8,
+        lstm_hidden_size=128, # TRY DIFFERENT ENC AND DEC SIZES
+        latent_size=64,
+        num_lstm_layers=4,
+        dropout=0.0,
+        use_fc_activations=False
+    ):    
+    
+    
     train_loader, val_loader, test_loader = init_sequential_dataloaders(X, y, batch_size)
 
     rnn = DoodleGenRNN(
         in_size=4, # 4 features -> dx, dy, dt, p
-        hidden_size=128, # num features in lstm hidden state
-        latent_size=64, # size of vector where new data for generation sampled from
-        num_layers=4, # num of stacked lstm layers
+        hidden_size=lstm_hidden_size, # num features in lstm hidden state
+        latent_size=latent_size, # size of vector where new data for generation sampled from
+        num_layers=num_lstm_layers, # num of stacked lstm layers
         num_labels=len(subset_labels), # num unique classes in dataset
-        dropout=0.0, # chance of neurons to dropout (turn to 0)
-        use_fc_activations=False # apply ReLU to non latent space fc layers
+        dropout=dropout, # chance of neurons to dropout (turn to 0)
+        use_fc_activations=use_fc_activations # apply ReLU to non latent space fc layers
     ).to(device)
 
     reconstruction_criterion = nn.MSELoss() # measure how well did gen and real seqs match (only part of total loss)
     optim = Adam(rnn.parameters(), lr)
 
-    # init metrics dict
+    # get shape of sample to give as input to summary
+    for batch in train_loader:
+        temp_sample_shape = batch[0].shape
+        temp_seq_len = batch[1][0].item()
+        temp_labels = batch[2]
+        break
+
+    model_summary = summary(rnn, input_size=temp_sample_shape, col_names=["input_size", "output_size", "num_params", "trainable"], verbose=0, seq_len=temp_seq_len, labels=temp_labels)
+    print(model_summary)
+
+    # logging hyperparams
+    hyperparams = {
+        "batch_size": batch_size,
+        "num_epochs": num_epochs,
+        "learning_rate": lr,
+        'num_labels': len(subset_labels),
+        'num_samples_per_label': torch.unique(torch.tensor(y), return_counts=True)[1][0].item(),
+        "num_total_samples": len(y),
+        "lstm_hidden_size": lstm_hidden_size,
+        "latent_size": latent_size,
+        "num_lstm_layers": num_lstm_layers,
+        "kl_div_coeff": alpha,
+        "dropout": dropout,
+        "use_fc_activations": use_fc_activations
+    }
+    
+    # init metrics dict    
     train_metrics = defaultdict(list)
     val_metrics = defaultdict(list)
     test_metrics = defaultdict(list)
@@ -310,6 +353,8 @@ def train_rnn(X, y, subset_labels, device, batch_size=32, num_epochs=5, lr=0.001
         'train': train_metrics,
         'val': val_metrics,
         'test': test_metrics,
+        'hyperparams': hyperparams,
+        "device": str(device)
     }
 
     # train/val loop
@@ -332,11 +377,22 @@ def train_rnn(X, y, subset_labels, device, batch_size=32, num_epochs=5, lr=0.001
             num_epochs,
             val_loader,
             rnn,
-            optim,
             reconstruction_criterion,
             alpha, # scale how important kl_div loss is
             device,
             metrics
         )
 
-    plot_generator_metrics(metrics, num_epochs)
+    # log metrics, generate plot, log model summary, save model
+    cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    log_dir = "output/model_metrics/"
+    plot_generator_metrics(metrics, cur_time, log_dir)
+    log_metrics(metrics, cur_time, log_dir)
+
+    model_fp = "output/models/"
+    model_fn = f"DoodleGenRNN_{cur_time}"
+    os.makedirs(model_fp, exist_ok=True)
+    torch.save(rnn.state_dict(), model_fp + model_fn)
+    with open(model_fp + model_fn, 'w') as model_summary_file:
+        model_summary_file.write(str(model_summary))
+    
