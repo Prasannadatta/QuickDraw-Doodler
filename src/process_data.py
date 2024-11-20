@@ -60,9 +60,9 @@ def init_sequential_dataloaders(X, y, batch_size):
     test_dataset = SequentialStrokeData(Xtest, ytest)
 
     # dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=sequential_collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=sequential_collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=sequential_collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=sequential_collate_fn, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=sequential_collate_fn, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=sequential_collate_fn, num_workers=4)
 
     return train_loader, val_loader, test_loader
 
