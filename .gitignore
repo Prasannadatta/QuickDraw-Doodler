@@ -5,6 +5,8 @@ quickdraw_data/reduced/*
 .hfcache
 
 output/figs/*
+output/models/*.pt
+output/model_metrics/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

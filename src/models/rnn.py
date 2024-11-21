@@ -8,12 +8,13 @@ from tqdm import tqdm
 from collections import defaultdict
 from datetime import datetime
 import os
+import inspect
 
 from src.process_data import init_sequential_dataloaders
 from src.metrics_visualize import plot_generator_metrics, log_metrics
     
 class DoodleGenRNN(nn.Module):
-    def __init__(self, in_size, enc_hidden_size, dec_hidden_size, latent_size, num_layers, num_labels, dropout=0.2, use_fc_activations=False):
+    def __init__(self, in_size, enc_hidden_size, dec_hidden_size, latent_size, num_lstm_layers, num_labels, dropout, use_fc_activations):
         super(DoodleGenRNN, self).__init__()
 
         self.use_fc_activations = use_fc_activations
@@ -23,7 +24,7 @@ class DoodleGenRNN(nn.Module):
         self.lstm_encoder = nn.LSTM(
             input_size=in_size,
             hidden_size=enc_hidden_size,
-            num_layers=num_layers,
+            num_layers=num_lstm_layers,
             dropout=dropout,
             batch_first=True, # data is loaded with batch dim first (b, seq_len, points)
             bidirectional=True
@@ -47,7 +48,7 @@ class DoodleGenRNN(nn.Module):
         self.lstm_decoder = nn.LSTM(
             input_size=in_size,
             hidden_size=dec_hidden_size,
-            num_layers=num_layers,
+            num_layers=num_lstm_layers,
             dropout=dropout,
             batch_first=True,
             bidirectional=False
@@ -292,34 +293,21 @@ def train_rnn(
         y,
         subset_labels,
         device,
-        batch_size=64,
-        num_epochs=5,
-        lr=0.001,
-        alpha=1.0,
-        enc_lstm_hidden_size=256,
-        dec_lstm_hidden_size=128,
-        latent_size=64,
-        num_lstm_layers=4,
-        dropout=0.0,
-        use_fc_activations=False
+        rnn_config
     ):    
     
-    
-    train_loader, val_loader, test_loader = init_sequential_dataloaders(X, y, batch_size)
+    # get model's params and filter config file for them
+    rnn_config.update({'num_labels': len(subset_labels)})
+    rnn_signature = inspect.signature(DoodleGenRNN.__init__)
+    rnn_params = {k: v for k, v in rnn_config.items() if k in rnn_signature.parameters}
 
-    rnn = DoodleGenRNN(
-        in_size=4, # 4 features -> dx, dy, dt, p
-        enc_hidden_size=enc_lstm_hidden_size, # num features in lstm hidden state
-        dec_hidden_size=dec_lstm_hidden_size, # num features in lstm hidden state
-        latent_size=latent_size, # size of vector where new data for generation sampled from
-        num_layers=num_lstm_layers, # num of stacked lstm layers
-        num_labels=len(subset_labels), # num unique classes in dataset
-        dropout=dropout, # chance of neurons to dropout (turn to 0)
-        use_fc_activations=use_fc_activations # apply ReLU to non latent space fc layers
-    ).to(device)
+    # prepare dataloaders
+    train_loader, val_loader, test_loader = init_sequential_dataloaders(X, y, rnn_config['batch_size'])
+
+    rnn = DoodleGenRNN(**rnn_params).to(device)
 
     reconstruction_criterion = nn.MSELoss() # measure how well did gen and real seqs match (only part of total loss)
-    optim = Adam(rnn.parameters(), lr)
+    optim = Adam(rnn.parameters(), rnn_config['learning_rate'])
 
     # get shape of sample to give as input to summary
     for batch in train_loader:
@@ -333,19 +321,7 @@ def train_rnn(
 
     # logging hyperparams
     hyperparams = {
-        "batch_size": batch_size,
-        "num_epochs": num_epochs,
-        "learning_rate": lr,
-        'num_labels': len(subset_labels),
-        'num_samples_per_label': torch.unique(torch.tensor(y), return_counts=True)[1][0].item(),
-        "num_total_samples": len(y),
-        "enc_hidden_size": enc_lstm_hidden_size,
-        "dec_hidden_size": dec_lstm_hidden_size,
-        "latent_size": latent_size,
-        "num_lstm_layers": num_lstm_layers,
-        "kl_div_coeff": alpha,
-        "dropout": dropout,
-        "use_fc_activations": use_fc_activations
+        
     }
     
     # init metrics dict    
@@ -361,15 +337,15 @@ def train_rnn(
     }
 
     # train/val loop
-    for epoch in range(num_epochs):
+    for epoch in range(rnn_config['num_epochs']):
         train(
             epoch,
-            num_epochs,
+            rnn_config['num_epochs'],
             train_loader,
             rnn,
             optim,
             reconstruction_criterion,
-            alpha,
+            rnn_config['kl_div_coeff'],
             device,
             metrics
         )
@@ -377,25 +353,25 @@ def train_rnn(
         rnn.eval()
         validate(
             epoch,
-            num_epochs,
+            rnn_config['num_epochs'],
             val_loader,
             rnn,
             reconstruction_criterion,
-            alpha, # scale how important kl_div loss is
+            rnn_config['kl_div_coeff'],
             device,
             metrics
         )
 
-    # log metrics, generate plot, log model summary, save model
-    cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    log_dir = "output/model_metrics/"
-    plot_generator_metrics(metrics, cur_time, log_dir)
-    log_metrics(metrics, cur_time, log_dir)
+        # each epoch log metrics, generate plot, log model summary, save model
+        cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        model_fp = "output/models/"
+        model_fn = f"DoodleGenRNN_epoch{epoch+1}_{cur_time}"
+        os.makedirs(model_fp, exist_ok=True)
+        torch.save(rnn.state_dict(), model_fp + model_fn + '.pt')
+        with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
+            model_summary_file.write(str(model_summary))
 
-    model_fp = "output/models/"
-    model_fn = f"DoodleGenRNN_{cur_time}"
-    os.makedirs(model_fp, exist_ok=True)
-    torch.save(rnn.state_dict(), model_fp + model_fn)
-    with open(model_fp + model_fn, 'w') as model_summary_file:
-        model_summary_file.write(str(model_summary))
+        log_dir = "output/model_metrics/"
+        plot_generator_metrics(metrics, cur_time, epoch+1, log_dir)
+        log_metrics(metrics, cur_time, epoch+1, log_dir)
     

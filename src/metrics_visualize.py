@@ -2,15 +2,14 @@ import matplotlib.pyplot as plt
 import json
 import os
 
-def plot_generator_metrics(metrics, cur_time, save_dir):
+def plot_generator_metrics(metrics, cur_time, cur_epoch, save_dir):
     """
     Plots training and validation metrics as subplots (2x3 grid).
     Each metric is plotted against the number of epochs.
     """
     os.makedirs(save_dir, exist_ok=True)
 
-    num_epochs = metrics['hyperparams']["num_epochs"]
-    epochs = range(1, num_epochs + 1)
+    epochs = range(1, cur_epoch + 1)
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     fig.suptitle("Generator Metrics Over Epochs", fontsize=16)
 
@@ -54,7 +53,7 @@ def plot_generator_metrics(metrics, cur_time, save_dir):
     fp = os.path.join(save_dir, fn)
     plt.savefig(fp, dpi=400)
 
-def log_metrics(metrics, cur_time, log_dir):
+def log_metrics(metrics, cur_time, cur_epoch, log_dir):
     """
     Logs metrics and hyperparameters into a JSON file.
 
@@ -69,7 +68,7 @@ def log_metrics(metrics, cur_time, log_dir):
     
     # Construct filename using final metrics and datetime for clarity
     filename = (
-        f"DoodleGenRNN_{cur_time}_metrics-log_loss-{metrics['train']['total_loss'][-1]}_"
+        f"DoodleGenRNN_{cur_epoch}_{cur_time}_metrics-log_loss-{metrics['train']['total_loss'][-1]}_"
         f"latentvar-{metrics['train']['latent_variance'][-1]}.json"
     )
     filepath = os.path.join(log_dir, filename)

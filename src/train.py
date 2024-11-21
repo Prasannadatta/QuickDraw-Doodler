@@ -1,5 +1,6 @@
 import numpy as np
 from tqdm import tqdm
+import json
 
 from src.get_data import *
 from src.process_data import local_normalize_stroke_data, test_display_img
@@ -9,7 +10,8 @@ from src.enum_types import DataMode, ModelType
 
 
 def handle_model_training(subset_labels, data_mode, num_samples_per_class, model_type, device):
-    print(data_mode, model_type)
+    with open("config/model_params.json", 'r') as config_file:
+        model_configs = json.load(config_file)
     
     # map label names to idxs
     label_map = {label: i for i, label in enumerate(subset_labels)}
@@ -24,17 +26,17 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
 
     # y is always the class label as an index following the label map
     if data_mode == DataMode.FULL: # x is stroke data with temporal aspect
-        train_generator(X, y, subset_labels, model_type, device)
+        train_generator(X, y, subset_labels, model_type, device, model_configs)
 
     # if data_mode == simplified: x is 255x255 final image data
     if data_mode == DataMode.SIMPLIFIED: # x is 255x255 final image data
-        train_classifier(X, y, subset_labels, num_samples_per_class, 255)
+        train_classifier(X, y, subset_labels, num_samples_per_class, 255, model_configs)
 
     if data_mode == DataMode.REDUCED: # x is 28x28 final image data
-        train_classifier(X, y, subset_labels, num_samples_per_class, 28)
+        train_classifier(X, y, subset_labels, num_samples_per_class, 28, model_configs)
     
     
-def train_generator(X, y, subset_labels, model_type, device): 
+def train_generator(X, y, subset_labels, model_type, device, model_configs): 
     # ensure data loaded properly by inspecting an image or two
     rand_idxs = np.random.randint(0, X.shape[0], 10) 
     for rand_idx in rand_idxs:
@@ -47,8 +49,9 @@ def train_generator(X, y, subset_labels, model_type, device):
         tcn.train_tcn(X, y)        
 
     elif model_type == ModelType.RNN:
+        rnn_configs = model_configs['rnn']
         Xnorm, _ = local_normalize_stroke_data(X)
-        rnn.train_rnn(Xnorm, y, subset_labels, device)
+        rnn.train_rnn(Xnorm, y, subset_labels, device, rnn_configs)
 
     elif model_type == ModelType.GAN:
         gan.train_gan(X, y) 
