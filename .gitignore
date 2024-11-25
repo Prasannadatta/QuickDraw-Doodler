@@ -1,6 +1,12 @@
 quickdraw_data/full/*
 quickdraw_data/simplified/*
+quickdraw_data/reduced/*
 .quickdrawcache
+.hfcache
+
+output/figs/*
+output/models/*.pt
+output/model_metrics/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

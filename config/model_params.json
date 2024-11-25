@@ -1,0 +1,27 @@
+{
+    "rnn": {
+        "in_size": 4,
+        "batch_size": 16,
+        "num_epochs": 20,
+        "learning_rate": 0.001,
+        "enc_hidden_size": 256,
+        "dec_hidden_size": 128,
+        "latent_size": 64,
+        "num_lstm_layers": 4,
+        "kl_div_coeff": 1.0,
+        "dropout": 0.0,
+        "use_fc_activations": false
+    },
+
+    "gan": {
+
+    },
+
+    "tcn": {
+
+    },
+
+    "cnn": {
+
+    }
+}

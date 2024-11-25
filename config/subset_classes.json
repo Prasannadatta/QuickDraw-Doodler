@@ -1,0 +1,40 @@
+{
+    "full": [
+        "cat",
+        "dog",
+        "car",
+        "tree",
+        "house",
+        "flower",
+        "fish",
+        "star",
+        "apple",
+        "face"
+    ],
+
+    "simplified": [
+        "cat",
+        "dog",
+        "car",
+        "tree",
+        "house",
+        "flower",
+        "fish",
+        "star",
+        "apple",
+        "face"
+    ],
+
+    "reduced": [
+        "cat",
+        "dog",
+        "car",
+        "tree",
+        "house",
+        "flower",
+        "fish",
+        "star",
+        "apple",
+        "face"
+    ]
+}

@@ -1,8 +1,11 @@
 torch
 torchvision
-torchsumamry
+torchinfo
 quickdraw
 matplotlib
+datasets
+scikit-learn
 pillow
 numpy
+opencv-python
 tqdm

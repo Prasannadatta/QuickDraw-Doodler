@@ -1,33 +1,68 @@
-import torch
-import torchvision
-import torchvision.transforms as transforms
-import torch.optim as optim
-import torch.nn as nn
-import torch.nn.functional as F
-from torchsummary import summary
-
-import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
+import json
 
-from src.data import download_data, load_data, test_display_img
+from src.get_data import *
+from src.process_data import local_normalize_stroke_data, test_display_img
+from src.models import cnn, tcn, gan, rnn
+from src.image_processing import vector_to_raster, full_strokes_to_vector_images
+from src.enum_types import DataMode, ModelType
 
-from utils.types import DataMode
 
+def handle_model_training(subset_labels, data_mode, num_samples_per_class, model_type, device):
+    with open("config/model_params.json", 'r') as config_file:
+        model_configs = json.load(config_file)
+    
+    # map label names to idxs
+    label_map = {label: i for i, label in enumerate(subset_labels)}
 
-def handle_model_training(subset_labels, data_mode, num_samples_per_class):
-    download_data(subset_labels, data_mode, num_samples_per_class) # download data if not already
-    data_dict = load_data(subset_labels, data_mode, num_samples_per_class) # grab and parse .npy files (one file for each class)
-
-    # x images are final doodle outputs, y labels are idx of subset labels, opt x strokes are if using full data to train generator
-    x_images, y = data_dict['images'], data_dict['labels']
     if data_mode == DataMode.FULL:
-        x_strokes = data_dict['strokes']
+        download_stroke_data(subset_labels, data_mode, num_samples_per_class) # download strokes from full dataset
+        X, y = load_stroke_data(subset_labels, data_mode, num_samples_per_class) # grab and parse .npy files (one file for each class)
 
-    # labels are loaded as idxs, for reference we can make a hashmap to relate label idxs to actual labels
-    label_map = {i: label for i, label in enumerate(subset_labels)}
-    print(label_map)
+    else:
+        download_img_data(subset_labels, data_mode, num_samples_per_class) # download data if not already
+        X, y = load_simplified_data(subset_labels, data_mode, num_samples_per_class) # grab and parse .npy files (one file for each class)
 
+    # y is always the class label as an index following the label map
+    if data_mode == DataMode.FULL: # x is stroke data with temporal aspect
+        train_generator(X, y, subset_labels, model_type, device, model_configs)
+
+    # if data_mode == simplified: x is 255x255 final image data
+    if data_mode == DataMode.SIMPLIFIED: # x is 255x255 final image data
+        train_classifier(X, y, subset_labels, num_samples_per_class, 255, model_configs)
+
+    if data_mode == DataMode.REDUCED: # x is 28x28 final image data
+        train_classifier(X, y, subset_labels, num_samples_per_class, 28, model_configs)
+    
+    
+def train_generator(X, y, subset_labels, model_type, device, model_configs): 
     # ensure data loaded properly by inspecting an image or two
-    rand_idx = np.random.randint(0, num_samples_per_class * len(subset_labels))
-    test_display_img(x_images[rand_idx], label_map[y[rand_idx]])
+    rand_idxs = np.random.randint(0, X.shape[0], 10) 
+    for rand_idx in rand_idxs:
+        X_vec = full_strokes_to_vector_images(X[rand_idx])
+        in_size = int(np.max([np.max(stroke) for stroke in X_vec if len(stroke) > 0]))
+        test_img = vector_to_raster([X_vec], in_size=in_size, out_size=256, line_diameter=8, padding=4)[0]
+        test_display_img(test_img, subset_labels[y[rand_idx]], rand_idx)
+
+    if model_type == ModelType.TCN:
+        tcn.train_tcn(X, y)        
+
+    elif model_type == ModelType.RNN:
+        rnn_configs = model_configs['rnn']
+        Xnorm, _ = local_normalize_stroke_data(X)
+        rnn.train_rnn(Xnorm, y, subset_labels, device, rnn_configs)
+
+    elif model_type == ModelType.GAN:
+        gan.train_gan(X, y) 
+
+    else:
+        print("incorrect modeltype specified for training generation")
+
+def train_classifier(X, y, subset_labels, num_samples_per_class, img_size):  
+    # ensure data loaded properly by inspecting an image or two or 10
+    rand_idxs = np.random.randint(0, X.shape[0], 10)    
+    for rand_idx in rand_idxs:
+        test_display_img(X[rand_idx], subset_labels[y[rand_idx]], rand_idx)
+
+    cnn.train_cnn(X, y)
