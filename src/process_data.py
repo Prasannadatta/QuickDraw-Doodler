@@ -73,31 +73,30 @@ def local_normalize_stroke_data(data):
         x, y, t, p = sample
         x_min, x_max = x.min(), x.max()
         y_min, y_max = y.min(), y.max()
-        t_min, t_max = t.min(), t.max()
+        total_t = t[-1] -t[0]
+        if total_t == 0:
+            total_t = 1e-6
 
         # edge cases if the min ever equals max (vert or hor lines)
         x_range = x_max - x_min if x_max - x_min != 0 else 1e-6
         y_range = y_max - y_min if y_max - y_min != 0 else 1e-6
-        t_range = t_max - t_min if t_max - t_min != 0 else 1e-6
 
         # normalize x and y to edges of bbox (xmax and ymax)
         # x, y are normalized before finding deltas to ensure scale consistency with bbox
         # t normalized before deltas to ensure temproal dynamics are relative to other strokes, not other drawings
         x_norm = (x - x_min) / x_range
         y_norm = (y - y_min) / y_range
-        t_norm = (t - t_min) / t_range
+        t_norm = (t - t[0]) / total_t
 
         # absolute values not necessary to process sequential inputs
         dx = np.diff(x_norm, prepend=x_norm[0]).astype(np.float32)
         dy = np.diff(y_norm, prepend=y_norm[0]).astype(np.float32)
-        
-        # FOR NOW testing with unnorm dt since normalizing shinks it significantly
-        dt = np.diff(t, prepend=t[0]).astype(np.int16)
+        dt = np.diff(t_norm, prepend=t_norm[0]).astype(np.float32)
 
         # each row will be a timestep where all features are grouped together
         norm_data[i] = np.stack([dx, dy, dt, p], axis=1)
 
-        stats.append({'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max, 't_min': t_min, 't_max': t_max})
+        stats.append({'x_min': x_min, 'x_max': x_max, 'y_min': y_min, 'y_max': y_max, 't_min': t[0], 't_max': total_t})
 
     return norm_data, stats
 
