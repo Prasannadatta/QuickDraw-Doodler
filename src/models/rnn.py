@@ -114,7 +114,7 @@ class DoodleGenRNN(nn.Module):
         and is not part of the model's parameters.
         """
         sigma = torch.exp(0.5 * logvar) # standard deviation
-        epsilon = torch.randn_like(sigma) # epsilon ~ N(0,1) -> random sample from normal dis
+        epsilon = torch.randn_like(sigma, device=sigma.device) # epsilon ~ N(0,1) -> random sample from normal dis
         z = mu + epsilon * sigma # adds some random var to latent space to increase generation diversity
 
         return z
@@ -139,6 +139,8 @@ class DoodleGenRNN(nn.Module):
         decode_context = self.dropout_fc(decode_context)
 
         return decode_context
+
+    def get_gmm_params(self):
 
 
     def decode(self, z, seq_len, labels, encoder_output, inputs=None):
@@ -177,7 +179,7 @@ class DoodleGenRNN(nn.Module):
         # allowing the decoder to learn separately from the encoder's messy outputs.
         # Prepare inputs
         if inputs is None:
-            inputs = torch.zeros(batch_size, seq_len, self.hidden_to_output_fc.out_features).to(z.device)
+            inputs = torch.zeros(batch_size, seq_len, self.hidden_to_output_fc.out_features, device=z.device)
 
         # decoding start
         # pass entire sequence through decoder
@@ -198,8 +200,120 @@ class DoodleGenRNN(nn.Module):
         
         return out, mu, logvar
 
-def kl_div(mu, logvar):
-    return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+def get_mixture_coef(output, num_mixture):
+    """
+    Split decoder output into MDN parameters.
+    
+    Args:
+        output: Tensor of shape (batch_size, seq_len, output_dim), decoder outputs.
+        num_mixture: Number of mixture components (M).
+        
+    Returns:
+        dict of MDN parameters.
+    """
+    # Split output
+    z_pi = output[..., :num_mixture]  # Mixture weights
+    z_mu1 = output[..., num_mixture:2*num_mixture]
+    z_mu2 = output[..., 2*num_mixture:3*num_mixture]
+    z_sigma1 = output[..., 3*num_mixture:4*num_mixture]
+    z_sigma2 = output[..., 4*num_mixture:5*num_mixture]
+    z_corr = output[..., 5*num_mixture:6*num_mixture]
+    z_pen_logits = output[..., 6*num_mixture:6*num_mixture+3]
+
+    # Process parameters
+    z_pi = F.softmax(z_pi, dim=-1)  # Softmax for mixture weights
+    z_pen = F.softmax(z_pen_logits, dim=-1)  # Softmax for pen states
+    z_sigma1 = torch.exp(z_sigma1)  # Exponentiate std deviations
+    z_sigma2 = torch.exp(z_sigma2)
+    z_corr = torch.tanh(z_corr)  # Correlation in [-1, 1]
+
+    return {
+        'z_pi': z_pi,
+        'z_mu1': z_mu1,
+        'z_mu2': z_mu2,
+        'z_sigma1': z_sigma1,
+        'z_sigma2': z_sigma2,
+        'z_corr': z_corr,
+        'z_pen_logits': z_pen_logits,
+        'z_pen': z_pen
+    }
+
+def tf_2d_normal(x1, x2, mu1, mu2, s1, s2, rho):
+    """
+    Compute the probability of (x1, x2) under a bivariate Gaussian distribution.
+
+    Args:
+        x1: Tensor of shape (batch_size, seq_len, 1), target x1 values.
+        x2: Tensor of shape (batch_size, seq_len, 1), target x2 values.
+        mu1: Tensor of shape (batch_size, seq_len, num_mixture), predicted mean of x1.
+        mu2: Tensor of shape (batch_size, seq_len, num_mixture), predicted mean of x2.
+        s1: Tensor of shape (batch_size, seq_len, num_mixture), predicted std dev of x1.
+        s2: Tensor of shape (batch_size, seq_len, num_mixture), predicted std dev of x2.
+        rho: Tensor of shape (batch_size, seq_len, num_mixture), predicted correlation coefficients.
+
+    Returns:
+        prob: Tensor of shape (batch_size, seq_len, num_mixture), bivariate Gaussian probabilities.
+    """
+    norm1 = (x1 - mu1) / s1
+    norm2 = (x2 - mu2) / s2
+    s1s2 = s1 * s2
+    z = (norm1 ** 2 + norm2 ** 2 - 2 * rho * norm1 * norm2) / (1 - rho ** 2)
+    neg_rho = 1 - rho ** 2
+    numerator = torch.exp(-z / 2)
+    denom = 2 * torch.pi * s1s2 * torch.sqrt(neg_rho)
+    prob = numerator / denom
+    return prob
+
+def reconstruction_loss(z_pi, z_mu1, z_mu2, z_sigma1, z_sigma2, z_corr, 
+                        z_pen_logits, x1_data, x2_data, pen_data, mask):
+    """
+    Calculate Sketch-RNN reconstruction loss (L_R).
+    
+    Args:
+        z_pi: Mixture weights (batch_size, seq_len, M).
+        z_mu1: Means for x1 (batch_size, seq_len, M).
+        z_mu2: Means for x2 (batch_size, seq_len, M).
+        z_sigma1: Std dev for x1 (batch_size, seq_len, M).
+        z_sigma2: Std dev for x2 (batch_size, seq_len, M).
+        z_corr: Correlation coefficients (batch_size, seq_len, M).
+        z_pen_logits: Pen state logits (batch_size, seq_len, 3).
+        x1_data, x2_data: Target deltas for x1 and x2.
+        pen_data: One-hot encoded true pen states.
+        mask: Sequence mask to exclude padded regions.
+    
+    Returns:
+        Total reconstruction loss (scalar).
+    """
+    # Compute 2D Gaussian probabilities
+    prob = tf_2d_normal(x1_data.unsqueeze(-1), x2_data.unsqueeze(-1),
+                        z_mu1, z_mu2, z_sigma1, z_sigma2, z_corr)
+
+    # Weight probabilities by mixture components
+    weighted_prob = prob * z_pi
+    offset_loss = -torch.log(torch.sum(weighted_prob, dim=-1) + 1e-6)  # Avoid log(0)
+    offset_loss = offset_loss * mask
+    offset_loss = offset_loss.sum() / mask.sum()  # Normalize by valid points
+
+    # Pen state loss (cross-entropy)
+    pen_loss = F.cross_entropy(z_pen_logits.transpose(1, 2), pen_data.argmax(dim=-1), reduction='none')
+    pen_loss = pen_loss * mask.squeeze(-1)
+    pen_loss = pen_loss.sum() / mask.sum()  # Normalize by valid points
+
+    return offset_loss + pen_loss
+
+
+def kl_divergence_loss(mu, logvar, anneal_factor):
+    """
+    Calculate KL divergence loss with annealing.
+    Args:
+        mu: Latent mean (batch_size, latent_size).
+        logvar: Latent log-variance (batch_size, latent_size).
+        anneal_factor: Weight for the KL loss.
+    Returns:
+        L_KL: Scalar KL divergence loss.
+    """
+    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return anneal_factor * kl / mu.size(0)
 
 def find_latent_smoothness(all_mus, num_pairs=20, steps=5):
     if len(all_mus) < 2: # can only calculate distances between at least 2 points
@@ -245,7 +359,7 @@ def train(
     latent_variances, unique_outputs, all_train_mus = [], [], []
     
     train_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Training Epoch {epoch+1}/{num_epochs}")
-    for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:
+    for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:        
         # move data to gpu
         Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
         
@@ -276,6 +390,7 @@ def train(
         # metrics
         # losses
         running_total_train_loss += loss.item()
+        print(loss.item())
         running_div_train_loss += kl_div_loss.item()
         running_recon_train_loss += rec_loss.item()
 
@@ -384,7 +499,7 @@ def train_rnn(
 
     rnn = DoodleGenRNN(**rnn_params).to(device)
 
-    reconstruction_criterion = nn.MSELoss(reduction='sum') # measure how well did gen and real seqs match (only part of total loss)
+    reconstruction_criterion = nn.MSELoss() # measure how well did gen and real seqs match (only part of total loss)
     optim = Adam(rnn.parameters(), rnn_config['learning_rate'])
 
     # get shape of sample to give as input to summary
@@ -411,6 +526,7 @@ def train_rnn(
 
     # train/val loop
     for epoch in range(rnn_config['num_epochs']):
+        #curr_kl_weight = (hps.kl_weight - (hps.kl_weight - hps.kl_weight_start) * (hps.kl_decay_rate)**step)
         train(
             epoch,
             rnn_config['num_epochs'],
@@ -456,3 +572,5 @@ def train_rnn(
         plot_generator_metrics(metrics, cur_time, epoch+1, log_dir)
         log_metrics(metrics, cur_time, epoch+1, log_dir)
     
+
+

@@ -162,7 +162,7 @@ def download_stroke_data(subset_labels, data_mode, num_samples_per_class, data_d
                     x[point_idx] = x[point_idx - 1]
                     y[point_idx] = y[point_idx - 1]
                     t[point_idx] = t[point_idx - 1] + 1  # increment timestamp
-                    p[point_idx] = 2  # Pen up
+                    p[point_idx] = 1  # Pen up
                     point_idx += 1
 
                 # get current stroke points in arr
@@ -186,7 +186,7 @@ def download_stroke_data(subset_labels, data_mode, num_samples_per_class, data_d
                 point_idx += num_points_in_stroke
             
             # last pen state is pen end
-            p[point_idx - 1] = 3
+            p[point_idx - 1] = 2
 
             drawings_arr[sample_idx] = np.stack([x[:point_idx], y[:point_idx], t[:point_idx], p[:point_idx]])
             
