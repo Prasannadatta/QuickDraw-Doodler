@@ -14,12 +14,27 @@ from src.process_data import init_sequential_dataloaders
 from src.metrics_visualize import plot_generator_metrics, log_metrics
     
 class DoodleGenRNN(nn.Module):
-    def __init__(self, in_size, enc_hidden_size, dec_hidden_size, latent_size, num_lstm_layers, num_labels, dropout, use_fc_activations):
+    def __init__(
+            self,
+            in_size,
+            enc_hidden_size,
+            dec_hidden_size,
+            attention_size,
+            latent_size,
+            num_lstm_layers,
+            num_labels,
+            dropout,
+            decoder_activations
+        ):
+
         super(DoodleGenRNN, self).__init__()
 
-        self.use_fc_activations = use_fc_activations
+        self.enc_hidden_size = enc_hidden_size
+        self.dec_hidden_size = dec_hidden_size
+        self.decoder_activations = decoder_activations
+        self.attention_size = attention_size
 
-        # encode sequential stroke data with bidirectional LSTM
+        # encode sequential stroke data with NOT bidirectional LSTM (measuring temporal dynamics)
         # final hidden state of lstm defines the latent space
         self.lstm_encoder = nn.LSTM(
             input_size=in_size,
@@ -27,15 +42,15 @@ class DoodleGenRNN(nn.Module):
             num_layers=num_lstm_layers,
             dropout=dropout,
             batch_first=True, # data is loaded with batch dim first (b, seq_len, points)
-            bidirectional=True
+            bidirectional=False
         )
 
         # latent space which will be pulled from for generation
         # latent space -> compressed representation of input data to lower dimensional space
         # like convolutions grab most important features, this latent space will learn the same
         # essentially hidden lstm to latent space, but with reparameterizing to sample from gaussian dist of mean and var of hidden
-        self.hidden_to_mu_fc = nn.Linear(enc_hidden_size * 2, latent_size) # * 2 for bidirectionality
-        self.hidden_to_logvar_fc = nn.Linear(enc_hidden_size * 2, latent_size)
+        self.hidden_to_mu_fc = nn.Linear(enc_hidden_size, latent_size) # * 2 for bidirectionality
+        self.hidden_to_logvar_fc = nn.Linear(enc_hidden_size, latent_size)
 
         # embedding for the labels
         # maps discrete labels (idxs for sketch labels e.g. 1 for cat, 2 for tree),
@@ -44,7 +59,8 @@ class DoodleGenRNN(nn.Module):
         self.label_embedding = nn.Embedding(num_labels, latent_size)
 
         # decoder LSTM
-        self.latent_to_hidden_fc = nn.Linear(latent_size * 2, dec_hidden_size)
+        self.latent_to_hidden_fc_h = nn.Linear(latent_size*2, dec_hidden_size)
+        self.latent_to_hidden_fc_c = nn.Linear(latent_size*2, dec_hidden_size)
         self.lstm_decoder = nn.LSTM(
             input_size=in_size,
             hidden_size=dec_hidden_size,
@@ -53,9 +69,18 @@ class DoodleGenRNN(nn.Module):
             batch_first=True,
             bidirectional=False
         )
-        self.hidden_to_output_fc = nn.Linear(dec_hidden_size, in_size)
+        if attention_size > 0:
+            self.hidden_to_output_fc = nn.Linear(enc_hidden_size + dec_hidden_size, in_size)
+        else:
+            self.hidden_to_output_fc = nn.Linear(dec_hidden_size, in_size)
 
         self.dropout_fc = nn.Dropout(dropout) # dropout layer
+
+        # attention layers
+        if attention_size > 0:
+            self.attn_enc_fc = nn.Linear(enc_hidden_size, attention_size)
+            self.attn_dec_fc = nn.Linear(dec_hidden_size, attention_size)
+            self.attn_scalar_fc = nn.Linear(attention_size, 1, bias=False)
 
     def encode(self, x):
         """
@@ -64,17 +89,17 @@ class DoodleGenRNN(nn.Module):
 
         """
         # grab final hidden state of lstm encoder
-        _, (hn, _) = self.lstm_encoder(x)
-
+        encoder_output, (hn, _) = self.lstm_encoder(x)
+            
         # since our lstm is bidirectional we grab the forward and backward states
-        hidden = torch.cat((hn[-2], hn[-1]), dim=1)
+        hidden = hn[-1]
 
         # mu and logvar aren't the actual mean and log of variance of hidden state,
         # rather they're learned params we will use as the "mean" and log of "variance" to sample z from
         mu = self.hidden_to_mu_fc(hidden) # mean of latent vec (z)
         logvar = self.hidden_to_logvar_fc(hidden) # log of variance of latent vec, use log for numerical stability
 
-        return mu, logvar
+        return mu, logvar, encoder_output
 
     def reparameterize(self, mu, logvar):
         """
@@ -94,7 +119,29 @@ class DoodleGenRNN(nn.Module):
 
         return z
 
-    def decode(self, z, seq_len, labels, inputs=None):
+    def attention(self, encoder_output, decoder_output):
+        # attention compute (expand for broadcasting)
+        encoder_output_attn = self.attn_enc_fc(encoder_output).unsqueeze(1)  # (batch_size, 1, seq_len_dec, attn_dim)
+        decoder_hidden_attn = self.attn_dec_fc(decoder_output).unsqueeze(2) # (batch_size, seq_len_dec, 1, attn_dim)
+        
+        # energy
+        energy = torch.tanh(decoder_hidden_attn + encoder_output_attn) # (batch_size, seq_len_dec, seq_len_enc, attn_dim)
+
+        # attention scores
+        attn_scores = self.attn_scalar_fc(energy).squeeze(-1) # (batch_size, seq_len_dec, seq_len_enc)
+
+        # attention weights
+        attn_weights = F.softmax(attn_scores, dim=-1)
+
+        # context vectors
+        context = torch.bmm(attn_weights, encoder_output)  # (batch_size, seq_len_dec, enc_hidden_size)
+        decode_context = torch.cat((decoder_output, context), dim=2)
+        decode_context = self.dropout_fc(decode_context)
+
+        return decode_context
+
+
+    def decode(self, z, seq_len, labels, encoder_output, inputs=None):
         """
         Decode the encoders's output while conditioning the latent vec on the embedded label
         """
@@ -111,36 +158,48 @@ class DoodleGenRNN(nn.Module):
 
         # prepare hidden state for decoder mapping from z to generate initial hidden state
         # unsqueeze to add dim of num_layers for decoder lstm since it expects (num_layers (1 initially), B, hidden_size)
-        hidden = self.latent_to_hidden_fc(z_conditioned).unsqueeze(0)
-        hidden = F.relu(hidden) if self.use_fc_activations else hidden
+        h0 = self.latent_to_hidden_fc_h(z_conditioned).unsqueeze(0)
+        c0 = self.latent_to_hidden_fc_c(z_conditioned).unsqueeze(0)
+        
+        # apply appropriate activation to hidden state
+        if self.decoder_activations.lower() != 'none':
+            activation = getattr(F, self.decoder_activations.lower())
+            h0 = activation(h0)
+            c0 = activation(c0)
 
         # init hidden state from z that is mapped from the above fc layer is repeated across lstm layers
-        h0 = hidden.repeat(self.lstm_decoder.num_layers, 1, 1)
-        c0 = torch.zeros_like(h0) # initial cell state set to 0
+        h0 = h0.repeat(self.lstm_decoder.num_layers, 1, 1)
+        c0 = c0.repeat(self.lstm_decoder.num_layers, 1, 1)
         hidden = (h0, c0)
 
-        if inputs is None: # if being asked to generate without conditional label
-            # unconditional generation inputs are 0s
+        # if inputs isn't none,
+        # it will contain the original input sequence
+        # allowing the decoder to learn separately from the encoder's messy outputs.
+        # Prepare inputs
+        if inputs is None:
             inputs = torch.zeros(batch_size, seq_len, self.hidden_to_output_fc.out_features).to(z.device)
 
         # decoding start
         # pass entire sequence through decoder
-        decode_out, _ = self.lstm_decoder(inputs, hidden)
+        decoder_output, _ = self.lstm_decoder(inputs, hidden)
 
-        # decoder output gets mapped to original input space
-        outputs = self.hidden_to_output_fc(decode_out)
+        if self.attention_size > 0:
+            decode_context = self.attention(encoder_output, decoder_output)
+            outputs = self.hidden_to_output_fc(decode_context)
+        else:
+            outputs = self.hidden_to_output_fc(decoder_output)            
 
         return outputs
 
     def forward(self, x, seq_len, labels, inputs=None):
-        mu, logvar = self.encode(x) # encode input sequence
+        mu, logvar, encoder_output = self.encode(x) # encode input sequence
         z = self.reparameterize(mu, logvar) # sample latent vector from encoded sequence
-        out = self.decode(z, seq_len, labels, inputs) # decode latent vector with label condition
+        out = self.decode(z, seq_len, labels, encoder_output, inputs) # decode latent vector with label condition
         
         return out, mu, logvar
 
-def kl_div(Xbatch, mu, logvar):
-    return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / Xbatch.size(0)
+def kl_div(mu, logvar):
+    return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
 def find_latent_smoothness(all_mus, num_pairs=20, steps=5):
     if len(all_mus) < 2: # can only calculate distances between at least 2 points
@@ -189,14 +248,24 @@ def train(
     for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:
         # move data to gpu
         Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
+        
+        # teacher forcing, give decoder sequence and correct next step
+        decoder_inputs = Xbatch[:, :-1, :] # remove last item in sequence
+        decoder_target = Xbatch[:, 1:, :] # remove first item
+        seq_lens = seq_lens - 1
 
         # forward
-        outputs, mu, logvar = rnn.forward(Xbatch, Xbatch.size(1), ybatch)
+        outputs, mu, logvar = rnn.forward(Xbatch, decoder_inputs.size(1), ybatch, inputs=decoder_inputs)
         all_train_mus.append(mu.detach().cpu()) # store for latent smoothness metric later
 
         # loss computation
-        rec_loss = reconstruction_criterion(outputs, Xbatch) # basically mse loss between gen and real seq
-        kl_div_loss = kl_div(Xbatch, mu, logvar) # how well does generated dis match real data dist
+        # need to normalize rec loss wrt to batch_size * seq len
+        mask = torch.arange(decoder_inputs.size(1)).unsqueeze(0).to(device) < seq_lens.unsqueeze(1)
+        mask = mask.unsqueeze(-1).expand_as(outputs)
+
+        # basically mse loss between gen and real seq
+        rec_loss = reconstruction_criterion(outputs[mask], decoder_target[mask]) / (seq_lens.sum().item())
+        kl_div_loss = kl_div(mu, logvar) / Xbatch.size(0) # how well does generated dis match real data dist
         loss = rec_loss + alpha * kl_div_loss # total loss
         
         # backward
@@ -251,16 +320,25 @@ def validate(
         for batch_idx, (Xbatch, seq_lens, ybatch) in val_bar:
             # move data to gpu
             Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
+            
+            decoder_inputs = Xbatch[:, :-1, :] # remove last item in sequence
+            decoder_target = Xbatch[:, 1:, :] # remove first item
+            seq_lens = seq_lens - 1
 
             # forward
-            outputs, mu, logvar = rnn.forward(Xbatch, Xbatch.size(1), ybatch)
+            outputs, mu, logvar = rnn.forward(Xbatch, decoder_inputs.size(1), ybatch, inputs=decoder_inputs)
             all_val_mus.append(mu.detach().cpu()) # store for latent smoothness metric later
 
             # loss computation
-            rec_loss = reconstruction_criterion(outputs, Xbatch) # basically mse loss between gen and real seq
-            kl_div_loss = kl_div(Xbatch, mu, logvar) # how well does generated dis match real data dist
-            loss = rec_loss + alpha * kl_div_loss # total loss
+            # need to normalize rec loss wrt to batch_size * seq len
+            mask = torch.arange(decoder_inputs.size(1)).unsqueeze(0).to(device) < seq_lens.unsqueeze(1)
+            mask = mask.unsqueeze(-1).expand_as(outputs)
 
+            # basically mse loss between gen and real seq
+            rec_loss = reconstruction_criterion(outputs[mask], decoder_target[mask]) / (seq_lens.sum().item())
+            kl_div_loss = kl_div(mu, logvar) / Xbatch.size(0) # how well does generated dis match real data dist
+            loss = rec_loss + alpha * kl_div_loss # total loss
+            
             # metrics
             # losses
             running_total_val_loss += loss.item()
@@ -306,7 +384,7 @@ def train_rnn(
 
     rnn = DoodleGenRNN(**rnn_params).to(device)
 
-    reconstruction_criterion = nn.MSELoss() # measure how well did gen and real seqs match (only part of total loss)
+    reconstruction_criterion = nn.MSELoss(reduction='sum') # measure how well did gen and real seqs match (only part of total loss)
     optim = Adam(rnn.parameters(), rnn_config['learning_rate'])
 
     # get shape of sample to give as input to summary
@@ -318,11 +396,6 @@ def train_rnn(
 
     model_summary = summary(rnn, input_size=temp_sample_shape, col_names=["input_size", "output_size", "num_params", "trainable"], verbose=0, seq_len=temp_seq_len, labels=temp_labels)
     print(model_summary)
-
-    # logging hyperparams
-    hyperparams = {
-        
-    }
     
     # init metrics dict    
     train_metrics = defaultdict(list)
@@ -332,7 +405,7 @@ def train_rnn(
         'train': train_metrics,
         'val': val_metrics,
         'test': test_metrics,
-        'hyperparams': hyperparams,
+        'hyperparams': rnn_params,
         "device": str(device)
     }
 
@@ -367,7 +440,15 @@ def train_rnn(
         model_fp = "output/models/"
         model_fn = f"DoodleGenRNN_epoch{epoch+1}_{cur_time}"
         os.makedirs(model_fp, exist_ok=True)
-        torch.save(rnn.state_dict(), model_fp + model_fn + '.pt')
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': rnn.state_dict(),
+            'optimizer_state_dict': optim.state_dict(),
+            'train_loss': metrics['train']['total_loss'][epoch],
+            'val_loss': metrics['val']['total_loss'][epoch],
+            'hyperparams': rnn_params
+        }, model_fp + model_fn + '.pt')
+
         with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
             model_summary_file.write(str(model_summary))
 

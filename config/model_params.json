@@ -4,13 +4,15 @@
         "batch_size": 16,
         "num_epochs": 20,
         "learning_rate": 0.001,
-        "enc_hidden_size": 256,
-        "dec_hidden_size": 128,
+        "enc_hidden_size": 128,
+        "dec_hidden_size": 64,
+        "attention_size": 64,
         "latent_size": 64,
         "num_lstm_layers": 4,
-        "kl_div_coeff": 1.0,
+        "kl_div_coeff": 1,
+        "num_annealing_epochs": 15,
         "dropout": 0.0,
-        "use_fc_activations": false
+        "decoder_activations": "leaky_relu"
     },
 
     "gan": {
