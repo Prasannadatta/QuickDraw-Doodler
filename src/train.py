@@ -38,22 +38,24 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
     
 def train_generator(X, y, subset_labels, model_type, device, model_configs): 
     # ensure data loaded properly by inspecting an image or two
+    print("Normalizing stroke data...")
+    Xnorm, _ = local_normalize_stroke_data(X)
+
     print("Rasterizing samples...")
-    rand_idxs = np.random.randint(0, X.shape[0], 10)
+    rand_idxs = np.random.randint(0, X.shape[0], len(subset_labels))
     for rand_idx in rand_idxs:
         X_vec = full_strokes_to_vector_images(X[rand_idx])
         in_size = int(np.max([np.max(stroke) for stroke in X_vec if len(stroke) > 0]))
         test_img = vector_to_raster([X_vec], in_size=in_size, out_size=256, line_diameter=8, padding=4)[0]
         test_display_img(test_img, subset_labels[y[rand_idx]], rand_idx)
+        break
 
     if model_type == ModelType.TCN:
         tcn.train_tcn(X, y)        
 
     elif model_type == ModelType.RNN:
         rnn_configs = model_configs['rnn']
-        print("Normalizing stroke data...")
-        Xnorm, _ = local_normalize_stroke_data(X)
-        animate_strokes(Xnorm[rand_idxs[5]], use_actual_time=True, save_gif=True, gif_fp="output/doodle_anims/sample_anim.gif")
+        animate_strokes(Xnorm[rand_idxs[0]], use_actual_time=True, save_gif=True, gif_fp="output/doodle_anims/sample_anim.gif")
 
         rnn.train_rnn(Xnorm, y, subset_labels, device, rnn_configs)
 

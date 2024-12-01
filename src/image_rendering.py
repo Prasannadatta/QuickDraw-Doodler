@@ -27,15 +27,16 @@ def full_strokes_to_vector_images(sample):
     simplified_image = []
     current_stroke = []
 
-    for idx in range(len(p)):
-        if p[idx] == 0 or p[idx] == 1:
+    for i in range(len(p)):
+        if p[i] == 1:
             # pen is down or pen start, add point to current stroke
-            current_stroke.append([x[idx], y[idx]])
-        elif p[idx] == 2 or p[idx] == 3:
+            current_stroke.append([x[i], y[i]])
+        elif p[i] == 0:
             # pen up or pen end, add point to current stroke and save it
-            current_stroke.append([x[idx], y[idx]])
+            current_stroke.append([x[i], y[i]])
             simplified_image.append(np.array(current_stroke, dtype=np.float32))
             current_stroke = []  # Reset current stroke
+
 
     return simplified_image
 
@@ -127,24 +128,22 @@ def animate_strokes(data, use_actual_time=True, save_gif=False, num_frames=500, 
 
     for i in range(len(pen_state)):
         # Check if this is a pen-up point (delta_x and delta_y are zero, pen_state == 1)
-        if pen_state[i] == 1 and delta_x[i] == 0 and delta_y[i] == 0:
+        if pen_state[i] == 0:
             # Pen-up point, end of current stroke
             if current_stroke_x:
                 strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
             current_stroke_x = []
             current_stroke_y = []
             current_stroke_t = []
-        else:
+        elif pen_state[i] == 1:
             # Continue current stroke
             current_stroke_x.append(x[i])
             current_stroke_y.append(y[i])
             current_stroke_t.append(time[i])
 
-        if pen_state[i] == 2:
-            # End of drawing
-            if current_stroke_x:
-                strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
-            break
+    # End of drawing
+    if current_stroke_x:
+        strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
 
     if current_stroke_x:
         strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
