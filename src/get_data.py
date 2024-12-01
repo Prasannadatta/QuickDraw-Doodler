@@ -4,7 +4,7 @@ import numpy as np
 from datasets import load_dataset
 
 from src.enum_types import DataMode
-from src.image_processing import vector_to_raster
+from src.image_rendering import vector_to_raster
 
 data_dir = "quickdraw_data"  # Directory to save the data
 os.makedirs(data_dir, exist_ok=True)

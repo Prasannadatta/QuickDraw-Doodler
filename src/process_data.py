@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 class SequentialStrokeData(Dataset):
     def __init__(self, data, labels):
@@ -15,7 +16,7 @@ class SequentialStrokeData(Dataset):
         self.sequence_lens = np.array([sample.shape[0] for sample in data])
 
     def __len__(self):
-            return self.data.shape[0]
+        return self.data.shape[0]
 
     def __getitem__(self, idx):
         sample = self.data[idx]  # (n_points, 4)
@@ -127,8 +128,9 @@ def unnormalize_stroke_data(norm_data, stats):
     return unnorm_data
 
 def test_display_img(img, label, idx):
+    os.makedirs("output/sample_outputs/", exist_ok=True)
     plt.imshow(img, cmap='gray')
     plt.title(f"Label: {label}")
     plt.axis('off')
-    plt.savefig(f"output/figs/{label}-{idx}.png")
+    plt.savefig(f"output/sample_outputs/{label}-{idx}.png")
     #plt.show()

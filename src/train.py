@@ -5,7 +5,7 @@ import json
 from src.get_data import *
 from src.process_data import local_normalize_stroke_data, test_display_img
 from src.models import cnn, tcn, gan, rnn
-from src.image_processing import vector_to_raster, full_strokes_to_vector_images
+from src.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
 from src.enum_types import DataMode, ModelType
 
 
@@ -38,7 +38,8 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
     
 def train_generator(X, y, subset_labels, model_type, device, model_configs): 
     # ensure data loaded properly by inspecting an image or two
-    rand_idxs = np.random.randint(0, X.shape[0], 10) 
+    print("Rasterizing samples...")
+    rand_idxs = np.random.randint(0, X.shape[0], 10)
     for rand_idx in rand_idxs:
         X_vec = full_strokes_to_vector_images(X[rand_idx])
         in_size = int(np.max([np.max(stroke) for stroke in X_vec if len(stroke) > 0]))
@@ -50,7 +51,10 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
 
     elif model_type == ModelType.RNN:
         rnn_configs = model_configs['rnn']
+        print("Normalizing stroke data...")
         Xnorm, _ = local_normalize_stroke_data(X)
+        animate_strokes(Xnorm[rand_idxs[5]], use_actual_time=True, save_gif=True, gif_fp="output/doodle_anims/sample_anim.gif")
+
         rnn.train_rnn(Xnorm, y, subset_labels, device, rnn_configs)
 
     elif model_type == ModelType.GAN:

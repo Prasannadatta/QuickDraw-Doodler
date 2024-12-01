@@ -1,5 +1,12 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+import os
+import torch
+import imageio
+import svgwrite
+from matplotlib.animation import FuncAnimation, PillowWriter
+
 
 def full_strokes_to_vector_images(sample):
     """
@@ -95,3 +102,105 @@ def vector_to_raster(
         raster_images[i] = img_gray
 
     return raster_images
+
+def animate_strokes(data, use_actual_time=True, save_gif=False, num_frames=500, gif_fp='sample.gif'):
+    # Extract columns from data
+    delta_x = data[:, 0]
+    delta_y = data[:, 1]
+    time_deltas = data[:, 2]
+    pen_state = data[:, 3]
+
+    # Compute cumulative sums for positions and times
+    x = np.cumsum(delta_x)
+    y = np.cumsum(delta_y)
+    if use_actual_time:
+        time = np.cumsum(time_deltas)
+    else:
+        # Normalize time to have constant intervals
+        time = np.linspace(0, 1, len(delta_x))
+
+    # Build strokes
+    strokes = []
+    current_stroke_x = []
+    current_stroke_y = []
+    current_stroke_t = []
+
+    for i in range(len(pen_state)):
+        # Check if this is a pen-up point (delta_x and delta_y are zero, pen_state == 1)
+        if pen_state[i] == 1 and delta_x[i] == 0 and delta_y[i] == 0:
+            # Pen-up point, end of current stroke
+            if current_stroke_x:
+                strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
+            current_stroke_x = []
+            current_stroke_y = []
+            current_stroke_t = []
+        else:
+            # Continue current stroke
+            current_stroke_x.append(x[i])
+            current_stroke_y.append(y[i])
+            current_stroke_t.append(time[i])
+
+        if pen_state[i] == 2:
+            # End of drawing
+            if current_stroke_x:
+                strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
+            break
+
+    if current_stroke_x:
+        strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
+
+    # Set up the plot
+    fig, ax = plt.subplots()
+    ax.axis('off')
+    ax.set_aspect('equal')
+    lines = []
+    for _ in strokes:
+        line, = ax.plot([], [], lw=2)
+        lines.append(line)
+    point, = ax.plot([], [], 'ro')
+
+    # Adjust axis limits
+    ax.set_xlim(np.min(x), np.max(x))
+    ax.set_ylim(np.min(y), np.max(y))
+    ax.invert_yaxis()  # Fix the upside-down issue
+
+    # Compute total time and frames
+    total_time = time[-1]
+    frames = np.linspace(0, total_time, num=num_frames)  # Adjust num for smoothness
+
+    def init():
+        for line in lines:
+            line.set_data([], [])
+        point.set_data([], [])
+        return lines + [point]
+
+    def update(t):
+        # Update each stroke up to the current time t
+        for idx, stroke in enumerate(strokes):
+            stroke_x = stroke['x']
+            stroke_y = stroke['y']
+            stroke_t = stroke['t']
+            # Find the indices where stroke_t <= t
+            stroke_idx = np.searchsorted(stroke_t, t, side='right')
+            if stroke_idx > 0:
+                lines[idx].set_data(stroke_x[:stroke_idx], stroke_y[:stroke_idx])
+            else:
+                lines[idx].set_data([], [])
+        # Update the moving point
+        overall_idx = np.searchsorted(time, t, side='right')
+        if 0 < overall_idx <= len(x):
+            point.set_data([x[overall_idx - 1]], [y[overall_idx - 1]])
+        else:
+            point.set_data([], [])
+        return lines + [point]
+
+    # Create the animation
+    ani = FuncAnimation(fig, update, frames=frames, init_func=init, blit=True, interval=20)
+    fig.tight_layout()
+    if save_gif:
+        # Save the animation as a GIF
+        writer = PillowWriter(fps=30)
+        ani.save(gif_fp, writer=writer)
+        print(f"Animation saved as {gif_fp}")
+    else:
+        plt.show()
