@@ -16,7 +16,7 @@ def load_model(model_fp, model_class, device, label):
 
     # make sure label passed in to condition model on was a label it was trained on
     if label and label not in gen_model.subset_labels:
-        raise Exception(f"Error: Label: {label} is not one that {model_fp} was trained on. Either change the label one of: '{rnn.subset_labels}' or generate unconditionally.")
+        raise Exception(f"Error: Label: {label} is not one that {model_fp} was trained on. Either change the label one of: '{gen_model.subset_labels}' or generate unconditionally.")
 
     gen_model.to(device)
 
