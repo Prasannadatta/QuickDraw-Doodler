@@ -53,7 +53,7 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
         rnn_configs = model_configs['rnn']
         print("Normalizing stroke data...")
         Xnorm, _ = local_normalize_stroke_data(X)
-        animate_strokes(Xnorm[rand_idxs[5]], use_actual_time=True, save_gif=True, gif_fp="output/doodle_anims/sample_anim.gif")
+        animate_strokes(Xnorm[rand_idxs[0]], use_actual_time=False, save_gif=True, gif_fp="output/doodle_anims/const_time.gif")
 
         rnn.train_rnn(Xnorm, y, subset_labels, device, rnn_configs)
 

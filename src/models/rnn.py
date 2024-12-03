@@ -25,7 +25,8 @@ class DoodleGenRNN(nn.Module):
             num_labels,
             num_mdn_modes,
             dropout,
-            decoder_activations
+            decoder_activations,
+            subset_labels
         ):
 
         super(DoodleGenRNN, self).__init__()
@@ -35,6 +36,7 @@ class DoodleGenRNN(nn.Module):
         self.decoder_activations = decoder_activations
         self.attention_size = attention_size
         self.num_mdn_modes = num_mdn_modes
+        self.subset_labels = subset_labels
 
         # encode sequential stroke data with NOT bidirectional LSTM (measuring temporal dynamics)
         # final hidden state of lstm defines the latent space
@@ -251,7 +253,7 @@ def pt_1d_normal(x, mu, sigma):
     # mu, sigma: (batch_size, seq_len, num_mdn_modes)
     x = x.unsqueeze(-1)  # Expand to match mixture components
     prob = (1 / (sigma * torch.sqrt(torch.tensor(2 * torch.pi)))) * torch.exp(-0.5 * ((x - mu) / sigma) ** 2)
-    print("pt_1d_normal prob min:", prob.min().item(), "max:", prob.max().item())
+    #print("pt_1d_normal prob min:", prob.min().item(), "max:", prob.max().item())
 
     return prob
 
@@ -275,7 +277,7 @@ def pt_2d_normal(x1, x2, mu1, mu2, s1, s2, rho, epsilon=1e-6):
     norm2 = (x2.unsqueeze(-1) - mu2) / s2
     z = (norm1 ** 2 + norm2 ** 2 - 2 * rho * norm1 * norm2) / (1 - rho ** 2 + epsilon)
     prob = (torch.exp(-z / 2)) / (2 * torch.pi * s1*s2 * torch.sqrt(1 - rho ** 2 + epsilon))
-    print("pt_2d_normal prob min:", prob.min().item(), "max:", prob.max().item())
+    #print("pt_2d_normal prob min:", prob.min().item(), "max:", prob.max().item())
     return prob
 
 def reconstruction_loss(target, z_pi, z_mu_dx, z_mu_dy, z_mu_dt, z_sigma_dx, z_sigma_dy, z_sigma_dt, z_corr, z_pen_logits, mask):
@@ -296,11 +298,13 @@ def reconstruction_loss(target, z_pi, z_mu_dx, z_mu_dy, z_mu_dt, z_sigma_dx, z_s
         Tensor: Scalar tensor representing the mean reconstruction loss.
     """
     dx, dy, dt, pen_state = target[..., 0], target[..., 1], target[..., 2], target[..., 3].long()  # Split target
+    '''
     print("dx shape:", dx.shape, "min:", dx.min().item(), "max:", dx.max().item())
     print("dy shape:", dy.shape, "min:", dy.min().item(), "max:", dy.max().item())
     print("dt shape:", dt.shape, "min:", dt.min().item(), "max:", dt.max().item())
     print("pen_state shape:", pen_state.shape, "unique values:", pen_state.unique())
     print("Mask shape:", mask.shape, "unique values:", mask.unique())
+    '''
 
     # bivariate distribution probabilities for dx and dy
     spatial_prob = pt_2d_normal(dx, dy, z_mu_dx, z_mu_dy, z_sigma_dx, z_sigma_dy, z_corr)
@@ -405,13 +409,14 @@ def train(
 
         # Loss calculations using Gaussian Mixture Density Network for reconstruction and kl divergence loss with annealing
         z_pi, z_mu_dx, z_mu_dy, z_mu_dt, z_sigma_dx, z_sigma_dy, z_sigma_dt, z_corr, z_pen, z_pen_logits = get_mixture_coeff(outputs, num_mdn_modes)
+        '''
         print("z_sigma_dx min:", z_sigma_dx.min().item(), "max:", z_sigma_dx.max().item())
         print("z_sigma_dy min:", z_sigma_dy.min().item(), "max:", z_sigma_dy.max().item())
         print("z_sigma_dt min:", z_sigma_dt.min().item(), "max:", z_sigma_dt.max().item())
         print("z_mu_dx min:", z_mu_dx.min().item(), "max:", z_mu_dx.max().item())
         print("z_mu_dy min:", z_mu_dy.min().item(), "max:", z_mu_dy.max().item())
         print("z_mu_dt min:", z_mu_dt.min().item(), "max:", z_mu_dt.max().item())
-
+        '''
         rec_loss = reconstruction_loss(decoder_target, z_pi, z_mu_dx, z_mu_dy, z_mu_dt, z_sigma_dx, z_sigma_dy, z_sigma_dt, z_corr, z_pen_logits, mask)
 
         #rec_loss = reconstruction_criterion(outputs[mask], decoder_target[mask]) / (seq_lens.sum().item())
@@ -522,11 +527,12 @@ def train_rnn(
         y,
         subset_labels,
         device,
-        rnn_config
+        rnn_config,
     ):    
     
     # get model's params and filter config file for them
     rnn_config.update({'num_labels': len(subset_labels)})
+    rnn_config.update({'subset_labels': subset_labels})
     rnn_signature = inspect.signature(DoodleGenRNN.__init__)
     rnn_params = {k: v for k, v in rnn_config.items() if k in rnn_signature.parameters}
 
@@ -562,6 +568,7 @@ def train_rnn(
 
     # train/val loop
     global_step = 0
+    start_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}" # for saving model
     for epoch in range(rnn_config['num_epochs']):
         anneal_factor = compute_anneal_factor(global_step, rnn_config['kl_weight_start'], rnn_config['kl_decay_rate'])
         
@@ -591,9 +598,8 @@ def train_rnn(
         global_step += len(train_loader)
 
         # each epoch log metrics, generate plot, log model summary, save model
-        cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        model_fp = "output/models/"
-        model_fn = f"DoodleGenRNN_epoch{epoch+1}_{cur_time}"
+        model_fp = "output/trained_models/"
+        model_fn = f"DoodleGenRNN_epoch{epoch+1}_{start_time}"
         os.makedirs(model_fp, exist_ok=True)
         torch.save({
             'epoch': epoch + 1,
@@ -608,8 +614,8 @@ def train_rnn(
             model_summary_file.write(str(model_summary))
 
         log_dir = "output/model_metrics/"
-        plot_generator_metrics(metrics, cur_time, epoch+1, log_dir)
-        log_metrics(metrics, cur_time, epoch+1, log_dir)
+        plot_generator_metrics(metrics, start_time, epoch+1, log_dir)
+        log_metrics(metrics, start_time, epoch+1, log_dir)
     
 
 

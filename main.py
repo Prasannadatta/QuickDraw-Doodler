@@ -3,10 +3,10 @@ import numpy as np
 import json
 import torch
 
-from src.infer import handle_doodle_inferring
+from src.classify import handle_doodle_classification
 from src.generate import handle_doodle_generation
 from src.train import handle_model_training
-from src.enum_types import DataMode, ModelType
+from src.enum_types import DataMode, ModelType, Mode
 
 # set seed globally to apply everywhere
 np.random.seed(123)
@@ -17,7 +17,8 @@ def main():
     # operation mode
     parser.add_argument(
         '-m', '--mode', 
-        choices=['infer', 'generate', 'train'], 
+        type=Mode,
+        choices=list(Mode), 
         required=True, 
         help="Choose the operation mode: 'infer' to perform inference on a drawing, 'generate' to create a new drawing, or 'train' to train on drawing data"
     )
@@ -35,7 +36,7 @@ def main():
     parser.add_argument(
         '-nspc', '--num_samples_per_class',
         type=int,
-        default=2000,
+        default=5000,
         help="Specify how many samples to use for training."
     )
 
@@ -48,7 +49,26 @@ def main():
         help="Choose the type of model to train, generate from, or infer on. "
     )
 
+    # path to trained model for generating/inferring
+    parser.add_argument(
+        '-mp', '--model_path',
+        type=str,
+        help="Path to trained model for generation or classification."
+    )
+
+    parser.add_argument(
+        '-l', '--label',
+        type=str,
+        default=None,
+        help="Optional label to condition generation on. Must be in list of 'subset_classes' model was trained on"
+    )
     args = parser.parse_args()
+
+    # check model_path arg
+    if args.mode in [Mode.GENERATE, Mode.CLASSIFY] and not args.model_path:
+        parser.error(f"Argument --model_path is required when mode is {args.mode.value}")
+
+    # check chosen class in subset
 
     # of the available 354 classes for training we will start with as a subset for testing
     with open("config/subset_classes.json", 'r') as subset_file:
@@ -58,13 +78,13 @@ def main():
 
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
-    if args.mode == 'infer':
-        handle_doodle_inferring()
+    if args.mode == Mode.CLASSIFY:
+        handle_doodle_classification()
 
-    if args.mode == 'generate':
-        handle_doodle_generation()
+    if args.mode == Mode.GENERATE:
+        handle_doodle_generation(args.model_type, args.model_path, device, args.label)
 
-    if args.mode == 'train':
+    if args.mode == Mode.TRAIN:
         handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type, device)
 
 if __name__ == '__main__':
