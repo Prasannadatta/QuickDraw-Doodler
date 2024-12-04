@@ -2,9 +2,6 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import torch
-import imageio
-import svgwrite
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 

@@ -6,7 +6,7 @@ import torch
 from src.classify import handle_doodle_classification
 from src.generate import handle_doodle_generation
 from src.train import handle_model_training
-from src.enum_types import DataMode, ModelType, Mode
+from utils.enum_types import DataMode, ModelType, Mode
 
 # set seed globally to apply everywhere
 np.random.seed(123)
@@ -19,7 +19,7 @@ def main():
         '-m', '--mode', 
         type=Mode,
         choices=list(Mode), 
-        required=True, 
+        default=Mode.TRAIN,
         help="Choose the operation mode: 'infer' to perform inference on a drawing, 'generate' to create a new drawing, or 'train' to train on drawing data"
     )
 
@@ -36,7 +36,7 @@ def main():
     parser.add_argument(
         '-nspc', '--num_samples_per_class',
         type=int,
-        default=5000,
+        default=10000,
         help="Specify how many samples to use for training."
     )
 

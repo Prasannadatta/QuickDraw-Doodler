@@ -10,8 +10,8 @@ from datetime import datetime
 import os
 import inspect
 
-from src.process_data import init_sequential_dataloaders
-from src.metrics_visualize import plot_generator_metrics, log_metrics
+from utils.process_data import init_sequential_dataloaders
+from utils.metrics_visualize import plot_generator_metrics, log_metrics
     
 class DoodleGenRNN(nn.Module):
     def __init__(

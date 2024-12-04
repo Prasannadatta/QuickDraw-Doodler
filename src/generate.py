@@ -3,11 +3,11 @@ import os
 
 from torch.optim import Adam
 
-from src.enum_types import ModelType
-from src.models.rnn import DoodleGenRNN
-from src.process_data import local_normalize_stroke_data, test_display_img
-from src.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
-from src.get_data import *
+from utils.enum_types import ModelType
+from models.rnn import DoodleGenRNN
+from utils.process_data import local_normalize_stroke_data, test_display_img
+from utils.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
+from utils.get_data import *
 
 def load_model(model_fp, model_class, device, label):
     ckpt = torch.load(model_fp, map_location=device)
@@ -23,7 +23,13 @@ def load_model(model_fp, model_class, device, label):
     optim = Adam(gen_model.parameters())
     optim.load_state_dict(ckpt['optimizer_state_dict'])
 
-    return gen_model, optim
+    metadata = {
+        'train_loss': ckpt['train_loss'],
+        'val_loss': ckpt['val_loss'],
+        'hyperparams': ckpt['hyperparams']
+    }
+
+    return gen_model, optim, metadata
 
 def generate_conditional(model, label):
     pass
@@ -36,13 +42,15 @@ def handle_doodle_generation(model_type, model_fp, device, label=None):
         raise FileNotFoundError(f"Error: File not found at path specified: {model_fp}")
     
     if model_type == ModelType.RNN:
-        rnn = load_model(model_fp, DoodleGenRNN, device, label)
+        rnn, optim, metadata = load_model(model_fp, DoodleGenRNN, device, label)
         if label:
             label_map = {label: i for i, label in enumerate(rnn.subset_labels)}
             label = label_map[label]
             generate_conditional(rnn, label)
         else:
             generate_uncoditional(rnn)
+
+    print(f"Loaded model stats:{metadata}")
         
 
 
