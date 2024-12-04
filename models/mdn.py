@@ -128,13 +128,13 @@ class MDN:
 
     def sample_mdn(self, t):
         # sample pen state distribution
-        pen_state = torch.multinomial(self.z_pen[t], 1).item()
+        pen_state = torch.multinomial(self.z_pen[0, t], 1).item()
 
         # sample dx, dy, dt
-        mode_idx = torch.multinomial(self.z_pi[t], 1).item()
+        mode_idx = torch.multinomial(self.z_pi[0, t], 1).item()
 
-        dx = torch.normal(self.z_mu_dx[t, mode_idx], self.z_sigma_dx[t, mode_idx]).item()
-        dy = torch.normal(self.z_mu_dy[t, mode_idx], self.z_sigma_dy[t, mode_idx]).item()
-        dt = torch.normal(self.z_mu_dt[t, mode_idx], self.z_sigma_dt[t, mode_idx]).item()
+        dx = torch.normal(self.z_mu_dx[0, t, mode_idx], self.z_sigma_dx[0, t, mode_idx]).item()
+        dy = torch.normal(self.z_mu_dy[0, t, mode_idx], self.z_sigma_dy[0, t, mode_idx]).item()
+        dt = torch.normal(self.z_mu_dt[0, t, mode_idx], self.z_sigma_dt[0, t, mode_idx]).item()
 
         return dx, dy, dt, pen_state

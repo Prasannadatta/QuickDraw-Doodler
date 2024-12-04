@@ -31,16 +31,30 @@ def load_model(model_fp, model_class, device, label):
 
     return gen_model, optim, metadata
 
-def generate_conditional(rnn, label, seq_len=80):
+def generate_conditional(rnn, label, device, seq_len=80):
     # input random latent vector
     #z = torch.randn(1, rnn.latent_size)
-    z = torch.randn(1, 32)
+    z = torch.randn(1, 32).to(device)
+    x, y, t = 0, 0, 0 # init absolute positions
+    strokes = []
+    label_tensor = torch.tensor([label], device=device)
 
     with torch.no_grad():
-        output = rnn.decode(z, seq_len, label, None, None)
+        # decode latent vec into mdn params
+        output = rnn.decode(z, seq_len, label_tensor, None, None)
 
+        # get mixture coefficients of mixture density network
+        rnn.mdn.get_mixture_coeff(output)
 
-
+        # sample strokes for each time step from Gaussian mixture density
+        for time_step in range(seq_len):
+            dx, dy, dt, p = rnn.mdn.sample_mdn(time_step)
+            x += dx
+            y += dy
+            t += dt
+            strokes.append([x, y, t, p])
+            
+    return np.array(strokes)
 
 def generate_uncoditional(model, T=1, z_scale=1):
     pass
@@ -54,8 +68,10 @@ def handle_doodle_generation(model_type, model_fp, device, label=None):
         if label:
             label_map = {label: i for i, label in enumerate(rnn.subset_labels)}
             label = label_map[label]
-            generate_conditional(rnn, label)
+            sample = generate_conditional(rnn, label, device)
         else:
-            generate_uncoditional(rnn)
+            sample = generate_uncoditional(rnn, device)
+
+    animate_strokes(sample, use_actual_time=True, save_gif=True, gif_fp="output/doodle_anims/sampled_doodle.gif")
 
     print(f"Loaded model stats:{metadata}")
