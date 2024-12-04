@@ -3,8 +3,8 @@ import os
 
 from torch.optim import Adam
 
-from utils.enum_types import ModelType
 from models.rnn import DoodleGenRNN
+from utils.enum_types import ModelType
 from utils.process_data import local_normalize_stroke_data, test_display_img
 from utils.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
 from utils.get_data import *
@@ -31,8 +31,16 @@ def load_model(model_fp, model_class, device, label):
 
     return gen_model, optim, metadata
 
-def generate_conditional(model, label):
-    pass
+def generate_conditional(rnn, label, seq_len=80):
+    # input random latent vector
+    #z = torch.randn(1, rnn.latent_size)
+    z = torch.randn(1, 32)
+
+    with torch.no_grad():
+        output = rnn.decode(z, seq_len, label, None, None)
+
+
+
 
 def generate_uncoditional(model, T=1, z_scale=1):
     pass
@@ -51,8 +59,3 @@ def handle_doodle_generation(model_type, model_fp, device, label=None):
             generate_uncoditional(rnn)
 
     print(f"Loaded model stats:{metadata}")
-        
-
-
-
-        
