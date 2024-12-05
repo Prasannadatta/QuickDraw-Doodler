@@ -2,6 +2,12 @@ import torch
 import torch.nn.functional as F
 
 class MDN:
+    """
+    Mixture Density Network to model output mixture coefficients from DoodleGen Decoder
+
+    WARNING: This class is NOT modular, it is designed solely for the output of the above VAE
+    TODO make this shit modular, but idc rn it's 3am and I just want this to WORRKKRKRK
+    """
     def __init__(self, num_modes):
         self.num_modes = num_modes
 

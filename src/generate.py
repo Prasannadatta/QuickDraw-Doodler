@@ -33,8 +33,7 @@ def load_model(model_fp, model_class, device, label):
 
 def generate_conditional(rnn, label, device, seq_len=80):
     # input random latent vector
-    #z = torch.randn(1, rnn.latent_size)
-    z = torch.randn(1, 32).to(device)
+    z = torch.randn(1, rnn.latent_size).to(device)
     x, y, t = 0, 0, 0 # init absolute positions
     strokes = []
     label_tensor = torch.tensor([label], device=device)
