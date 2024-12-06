@@ -9,7 +9,7 @@
         "attention_size": 0,
         "latent_size": 64,
         "num_lstm_layers": 4,
-        "num_mdn_modes": 40,
+        "num_mdn_modes": 20,
         "kl_weight_start": 0.01,
         "kl_decay_rate": 0.9999,  
         "kl_div_coeff": 1,

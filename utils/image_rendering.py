@@ -2,9 +2,6 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import torch
-import imageio
-import svgwrite
 from matplotlib.animation import FuncAnimation, PillowWriter
 
 
@@ -198,6 +195,7 @@ def animate_strokes(data, use_actual_time=True, save_gif=False, num_frames=500, 
     fig.tight_layout()
     if save_gif:
         # Save the animation as a GIF
+        os.makedirs(os.path.dirname(gif_fp),exist_ok=True)
         writer = PillowWriter(fps=30)
         ani.save(gif_fp, writer=writer)
         print(f"Animation saved as {gif_fp}")

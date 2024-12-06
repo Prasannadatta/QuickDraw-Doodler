@@ -66,11 +66,7 @@ def log_metrics(metrics, cur_time, cur_epoch, log_dir):
     """
     os.makedirs(log_dir, exist_ok=True)
     
-    # Construct filename using final metrics and datetime for clarity
-    filename = (
-        f"DoodleGenRNN_{cur_epoch}_{cur_time}_metrics-log_loss-{metrics['train']['total_loss'][-1]}_"
-        f"latentvar-{metrics['train']['latent_variance'][-1]}.json"
-    )
+    filename = f"DoodleGenRNN_{cur_time}.json"
     filepath = os.path.join(log_dir, filename)
 
     # Write metrics to a JSON file
