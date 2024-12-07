@@ -2,7 +2,7 @@
     "rnn": {
         "in_size": 4,
         "batch_size": 32,
-        "num_epochs": 20,
+        "num_epochs": 300,
         "learning_rate": 0.001,
         "enc_hidden_size": 256,
         "dec_hidden_size": 128,
@@ -16,14 +16,6 @@
         "kl_tolerance": 0.2,
         "dropout": 0.0,
         "decoder_activations": "leaky_relu"
-    },
-
-    "gan": {
-
-    },
-
-    "tcn": {
-
     },
 
     "cnn": {

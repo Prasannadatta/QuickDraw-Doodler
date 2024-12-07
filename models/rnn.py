@@ -469,7 +469,7 @@ def train_rnn(
         global_step += len(train_loader)
 
         # each epoch log metrics, generate plot, log model summary, save model
-        model_fp = "output/trained_models/"
+        model_fp = "output/model_ckpts/"
         model_fn = f"DoodleGenRNN_epoch{epoch+1}_{start_time}"
         os.makedirs(model_fp, exist_ok=True)
         torch.save({

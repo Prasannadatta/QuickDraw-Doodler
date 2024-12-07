@@ -5,7 +5,7 @@ quickdraw_data/reduced/*
 .hfcache
 
 output/figs/*
-output/trained_models/*.pt
+output/model_ckpts/*.pt
 output/model_metrics/*
 
 # Byte-compiled / optimized / DLL files

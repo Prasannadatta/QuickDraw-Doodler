@@ -4,7 +4,7 @@ import json
 
 from utils.get_data import *
 from utils.process_data import local_normalize_stroke_data, test_display_img
-from models import cnn, tcn, gan, rnn
+from models import cnn, rnn
 from utils.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
 from utils.enum_types import DataMode, ModelType
 
