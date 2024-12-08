@@ -31,7 +31,7 @@ def load_model(model_fp, model_class, device, label):
 
     return gen_model, optim, metadata
 
-def generate_conditional(rnn, label, device, seq_len=80):
+def generate_conditional(rnn, label, device, seq_len=125):
     # input random latent vector
     z = torch.randn(1, rnn.latent_size).to(device)
     x, y, t = 0, 0, 0 # init absolute positions
@@ -58,7 +58,7 @@ def generate_conditional(rnn, label, device, seq_len=80):
 def generate_uncoditional(model, T=1, z_scale=1):
     pass
 
-def handle_doodle_generation(model_type, model_fp, device, label=None):
+def handle_doodle_generation(model_type, model_fp, device, label=None, sample_out_fp="output/doodle_anims/sampled_doodle.gif"):
     if not os.path.isfile(model_fp):
         raise FileNotFoundError(f"Error: File not found at path specified: {model_fp}")
     
@@ -70,7 +70,8 @@ def handle_doodle_generation(model_type, model_fp, device, label=None):
             sample = generate_conditional(rnn, label, device)
         else:
             sample = generate_uncoditional(rnn, device)
-
-    animate_strokes(sample, use_actual_time=True, save_gif=True, gif_fp="output/doodle_anims/sampled_doodle.gif")
-
     print(f"Loaded model stats:{metadata}")
+    print(sample)
+    animate_strokes(sample, use_actual_time=True, save_gif=True, gif_fp=sample_out_fp)
+    
+    print(f"Saved sample animation to: {sample_out_fp}")
