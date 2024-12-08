@@ -140,7 +140,7 @@ class DoodleGenRNN(nn.Module):
 
         return decode_context
 
-    def get_gmm_params(self):
+    # def get_gmm_params(self):
 
 
     def decode(self, z, seq_len, labels, encoder_output, inputs=None):
