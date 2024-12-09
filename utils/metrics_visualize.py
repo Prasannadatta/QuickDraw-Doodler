@@ -108,7 +108,7 @@ def plot_cnn_metrics(metrics, cur_time, cur_epoch, save_dir):
     plt.tight_layout(rect=[0, 0, 1, 0.95])
 
     # Save the plot
-    fn = f"ClassifierCNN_{cur_time}.png"
+    fn = f"ClassifierCNN_{cur_epoch}_{cur_time}.png"
     fp = os.path.join(save_dir, fn)
     plt.savefig(fp, dpi=400)
     print(f"Metrics plot saved at: {fp}")    
