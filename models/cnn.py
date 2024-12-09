@@ -114,7 +114,11 @@ def test_model(model, test_loader, device, class_names):
     plt.title("Confusion Matrix")
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
-    plt.show()
+    # Save the plot
+    fn = f"ClassifierCNN_test_{cur_time}.png"
+    fp = os.path.join('output/classifier_test_loop/', fn)
+    plt.savefig(fp, dpi=400)
+    print(f"Test plot saved at: {fp}")
 
     return {
         "accuracy": accuracy,
@@ -192,7 +196,7 @@ def train_cnn(X, y, device, image_size, model_configs, subset_labels):
         # Save model per epoch
         cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         model_fp = "output/classifier_model/"
-        model_fn = f"classifierCNN_epoch{epoch+1}_{cur_time}.pt"
+        model_fn = f"classifierCNN_epoch{epoch+1}_{cur_time}"
         os.makedirs(model_fp, exist_ok=True)
 
         torch.save({
