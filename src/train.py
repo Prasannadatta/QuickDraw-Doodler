@@ -73,4 +73,4 @@ def train_classifier(X, y, subset_labels, num_samples_per_class, img_size, model
     for rand_idx in rand_idxs:
         test_display_img(X[rand_idx], subset_labels[y[rand_idx]], rand_idx)
     #changed the function name
-    cnn.train_cnn(X, y, device, img_size, model_configs['cnn'])
+    cnn.train_cnn(X, y, device, img_size, model_configs['cnn'], subset_labels)

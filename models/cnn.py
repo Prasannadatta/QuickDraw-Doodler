@@ -12,6 +12,7 @@ import numpy as np
 # from src.process_data import init_sequential_dataloaders
 from utils.metrics_visualize import plot_cnn_metrics, log_metrics
 from tqdm import tqdm
+from torchinfo import summary
 
 # main model
 # image size should be given in parameter
@@ -124,11 +125,22 @@ def test_model(model, test_loader, device, class_names):
         "classification_report": report
     }
 
-def train_cnn(X, y, device, image_size, model_configs):
+def train_cnn(X, y, device, image_size, model_configs, subset_labels):
     # Extract configurations
     batch_size = model_configs['batch_size']
     num_epochs = model_configs['num_epochs']
     learning_rate = model_configs['learning_rate']
+    class_names = subset_labels
+
+    # Reshape X to include channel dimension
+    X = X.reshape(-1, 1, image_size, image_size)  # Ensure shape is (N, 1, 28, 28)
+    print(f"Reshaped X shape: {X.shape}")  # Debugging: Check new shape
+
+    # Move data to device
+    X, y = torch.tensor(X, dtype=torch.float32).to(device), torch.tensor(y, dtype=torch.long).to(device)
+
+    print(f"Shape of X: {X.shape} ----------------------------------")  # Expect (20000, 1, 28, 28) for grayscale
+    print(f"Shape of y: {y.shape} ----------------------------------")  # Expect (20000,)    
 
     # Prepare dataset and dataloaders
     dataset = torch.utils.data.TensorDataset(X, y)
@@ -149,6 +161,17 @@ def train_cnn(X, y, device, image_size, model_configs):
         'train': {'loss': [], 'accuracy': []},
         'val': {'loss': [], 'accuracy': []}
     }
+
+    input_size = (1, 1, 28, 28)  # Batch size of 1, 1 channel, 28x28 image
+    # Generate the model summary
+    model_summary = summary(
+        model,
+        input_size=input_size,  # Single input example
+        col_names=["input_size", "output_size", "num_params", "trainable"],
+        verbose=1
+    )
+    print(model_summary)
+
 
     # Training loop with tqdm
     for epoch in tqdm(range(num_epochs), desc="Training Progress", unit="epoch"):

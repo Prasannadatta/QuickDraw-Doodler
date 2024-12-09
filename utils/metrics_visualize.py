@@ -89,8 +89,8 @@ def plot_cnn_metrics(metrics, cur_time, cur_epoch, save_dir):
     fig.suptitle("CNN Metrics Over Epochs", fontsize=16)
 
     # Train and validation losses
-    axes[0].plot(epochs, metrics['train']['total_loss'], label='Train Loss', color='blue')
-    axes[0].plot(epochs, metrics['val']['total_loss'], label='Validation Loss', color='orange')
+    axes[0].plot(epochs, metrics['train']['loss'], label='Train Loss', color='blue')
+    axes[0].plot(epochs, metrics['val']['loss'], label='Validation Loss', color='orange')
     axes[0].set_title('Loss')
     axes[0].set_xlabel('Epochs')
     axes[0].set_ylabel('Loss')
