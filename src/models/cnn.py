@@ -1,14 +1,23 @@
 # Model
-# def train_cnn(X, y):
-#     pass
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, random_split
+import os
+from datetime import datetime
+import torch.optim as optim
+from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+# from src.process_data import init_sequential_dataloaders
+from src.metrics_visualize import plot_cnn_metrics, log_metrics
+from tqdm import tqdm
 
 # main model
-# i=image size should be given in parameter
+# image size should be given in parameter
 class classifierCNN(nn.Module):
     def __init__(self, num_classes=10):
-        super(QuickDrawCNN, self).__init__()
+        super(classifierCNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)  # 28x28 -> 28x28
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)  # 28x28 -> 28x28
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)  # 28x28 -> 14x14
@@ -27,91 +36,166 @@ class classifierCNN(nn.Module):
 
 # Training function
 def train_model(model, train_loader, criterion, optimizer, device):
-    model.train()  # Set model to training mode
+    model.train()
     total_loss, correct = 0, 0
     for images, labels in train_loader:
         images, labels = images.to(device), labels.to(device)
-        
+
         # Forward pass
         outputs = model(images)
         loss = criterion(outputs, labels)
-        
+
         # Backward pass and optimization
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        
-        # Track metrics
+
+        # Metrics
         total_loss += loss.item()
         _, preds = torch.max(outputs, 1)
         correct += (preds == labels).sum().item()
-    
+
     accuracy = 100 * correct / len(train_loader.dataset)
     return total_loss / len(train_loader), accuracy
 
 # Validation function
 def validate_model(model, val_loader, criterion, device):
-    model.eval()  # Set model to evaluation mode
+    model.eval()
     total_loss, correct = 0, 0
     with torch.no_grad():
         for images, labels in val_loader:
             images, labels = images.to(device), labels.to(device)
-            
+
             # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
-            
-            # Track metrics
+
+            # Metrics
             total_loss += loss.item()
             _, preds = torch.max(outputs, 1)
             correct += (preds == labels).sum().item()
-    
+
     accuracy = 100 * correct / len(val_loader.dataset)
     return total_loss / len(val_loader), accuracy
 
-
-////////////////////////
-# handle train function
-    # Hyperparameters
-num_epochs = 10
-
-# Instantiate the model, loss function, and optimizer
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = classifierCNN(num_classes=10).to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-# Load test dataset
-test_dataset = datasets.ImageFolder(root='PATH_TO_TEST_DATA', transform=transform)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    # Track performance
-    for epoch in range(num_epochs):
-        train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device)
-        val_loss, val_accuracy = validate_model(model, val_loader, criterion, device)
-        
-        print(f"Epoch {epoch+1}/{num_epochs}")
-        print(f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%")
-        print(f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
-
-
-test_accuracy = test_model(model, test_loader, device)
-print(f"Test Accuracy: {test_accuracy:.2f}%")
-////////////////////////
-
-def test_model(model, test_loader, device):
+# test function
+def test_model(model, test_loader, device, class_names):
     model.eval()
-    correct = 0
+    all_preds, all_labels = [], []
+
     with torch.no_grad():
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
+
+            # Forward pass
             outputs = model(images)
             _, preds = torch.max(outputs, 1)
-            correct += (preds == labels).sum().item()
+
+            # Store predictions and labels
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+    # Compute metrics
+    confusion = confusion_matrix(all_labels, all_preds)
+    report = classification_report(all_labels, all_preds, target_names=class_names, output_dict=True)
+
+    # Extract metrics
+    accuracy = 100 * np.trace(confusion) / np.sum(confusion)  # Overall accuracy
+    precision, recall, f1_score, _ = precision_recall_fscore_support(all_labels, all_preds, average='weighted')
+
+    # Print classification report
+    print("Classification Report:")
+    print(classification_report(all_labels, all_preds, target_names=class_names))
+
+    # Plot confusion matrix
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(confusion, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+    plt.title("Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.show()
+
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1_score,
+        "confusion_matrix": confusion,
+        "classification_report": report
+    }
+
+def train_cnn(X, y, device, image_size, model_configs):
+    # Extract configurations
+    batch_size = model_configs['batch_size']
+    num_epochs = model_configs['num_epochs']
+    learning_rate = model_configs['learning_rate']
+
+    # Prepare dataset and dataloaders
+    dataset = torch.utils.data.TensorDataset(X, y)
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    # Initialize model, loss function, and optimizer
+    model = classifierCNN(num_classes=10).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Metrics storage
+    metrics = {
+        'train': {'loss': [], 'accuracy': []},
+        'val': {'loss': [], 'accuracy': []}
+    }
+
+# Training loop with tqdm
+for epoch in tqdm(range(num_epochs), desc="Training Progress", unit="epoch"):
+    train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device)
+    val_loss, val_accuracy = validate_model(model, val_loader, criterion, device)
+
+    # Logging
+    print(f"\nEpoch {epoch+1}/{num_epochs}")
+    print(f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%")
+    print(f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
+
+    # Save metrics
+    metrics['train']['loss'].append(train_loss)
+    metrics['train']['accuracy'].append(train_accuracy)
+    metrics['val']['loss'].append(val_loss)
+    metrics['val']['accuracy'].append(val_accuracy)
+
+    # Save model per epoch
+    cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    model_fp = "output/classifier_model/"
+    model_fn = f"classifierCNN_epoch{epoch+1}_{cur_time}.pt"
+    os.makedirs(model_fp, exist_ok=True)
+
+    torch.save({
+        'epoch': epoch + 1,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'train_loss': train_loss,
+        'val_loss': val_loss
+    }, model_fp + model_fn + '.pt')
+
+    # Create and save logs
+    with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
+        model_summary_file.write(str(model_summary))
+
+    # Metrics visualization and logging
+    log_dir = "output/classifier_model_metrics/"
+    plot_cnn_metrics(metrics, cur_time, epoch + 1, log_dir)
+    log_metrics(metrics, cur_time, epoch + 1, log_dir)
     
-    accuracy = 100 * correct / len(test_loader.dataset)
-    return accuracy
+# Final Test Metrics
+    test_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_metrics = test_model(model, test_loader, device, class_names)
 
-# test_accuracy = test_model(model, test_loader, device)
-# print(f"Test Accuracy: {test_accuracy:.2f}%")
+    print(f"Test Accuracy: {test_metrics['accuracy']:.2f}%")
+    print(f"Precision: {test_metrics['precision']:.2f}")
+    print(f"Recall: {test_metrics['recall']:.2f}")
+    print(f"F1 Score: {test_metrics['f1_score']:.2f}")
 
+    return model, metrics, test_metrics
