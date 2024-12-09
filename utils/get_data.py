@@ -3,8 +3,8 @@ import os
 import numpy as np
 from datasets import load_dataset
 
-from src.enum_types import DataMode
-from src.image_processing import vector_to_raster
+from utils.enum_types import DataMode
+from utils.image_rendering import vector_to_raster
 
 data_dir = "quickdraw_data"  # Directory to save the data
 os.makedirs(data_dir, exist_ok=True)
@@ -97,6 +97,10 @@ def download_stroke_data(subset_labels, data_mode, num_samples_per_class, data_d
         ... // Additional strokes
     ]
 
+    pen states are a binary array:
+    p[i] == 0 -> pen lifted
+    p[i] == 1 -> pen drawing
+
     Args:
         subset_labels (list of str): List of classes to load.
         data_mode (DataMode): Mode for downloading data ('full' or 'simplified').
@@ -155,14 +159,13 @@ def download_stroke_data(subset_labels, data_mode, num_samples_per_class, data_d
             point_idx = 0
             for stroke_idx, stroke in enumerate(drawing_data):
                 num_points_in_stroke = len(stroke[0])
-
                 # insert a pen-up point if not the first stroke
                 if stroke_idx > 0:
                     # Insert pen-up point (repeats last point of previous stroke)
                     x[point_idx] = x[point_idx - 1]
                     y[point_idx] = y[point_idx - 1]
                     t[point_idx] = t[point_idx - 1] + 1  # increment timestamp
-                    p[point_idx] = 1  # Pen up
+                    p[point_idx] = 0  # Pen up
                     point_idx += 1
 
                 # get current stroke points in arr
@@ -170,23 +173,16 @@ def download_stroke_data(subset_labels, data_mode, num_samples_per_class, data_d
                 y_stroke = np.array(stroke[1], dtype=np.float32)
                 t_stroke = np.array(stroke[2], dtype=np.int32)
 
-                # Pen state array for the current stroke
+                # pen states
                 p_stroke = np.ones(num_points_in_stroke, dtype=np.uint8)  # pen down
-                if stroke_idx == 0:
-                    p_stroke[0] = 0  # pen start
-                else:
-                    p_stroke[0] = 1  # pen down after pen up
+                p[point_idx:point_idx + num_points_in_stroke] = p_stroke
 
                 # assign stroke points to collective stroke arrays
                 x[point_idx:point_idx + num_points_in_stroke] = x_stroke
                 y[point_idx:point_idx + num_points_in_stroke] = y_stroke
                 t[point_idx:point_idx + num_points_in_stroke] = t_stroke
-                p[point_idx:point_idx + num_points_in_stroke] = p_stroke
-
+                
                 point_idx += num_points_in_stroke
-            
-            # last pen state is pen end
-            p[point_idx - 1] = 2
 
             drawings_arr[sample_idx] = np.stack([x[:point_idx], y[:point_idx], t[:point_idx], p[:point_idx]])
             

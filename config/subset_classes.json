@@ -1,11 +1,8 @@
 {
     "full": [
         "cat",
-        "car",
         "tree",
-        "flower",
-        "fish",
-        "face"
+        "fish"
     ],
 
     "simplified": [

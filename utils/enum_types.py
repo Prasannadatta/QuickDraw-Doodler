@@ -1,5 +1,10 @@
 from enum import Enum
 
+class Mode(Enum):
+    TRAIN = 'train'
+    GENERATE = 'generate'
+    CLASSIFY = 'classify'
+
 class DataMode(Enum):
     FULL = 'full' # includes strokes taken to complete drawing
     SIMPLIFIED = 'simplified' # only contains final output of drawing
