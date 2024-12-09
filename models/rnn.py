@@ -484,7 +484,7 @@ def train_rnn(
         with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
             model_summary_file.write(str(model_summary))
 
-        log_dir = "output/model_metrics/"
+        log_dir = "output/model_ckpts/"
         plot_generator_metrics(metrics, start_time, epoch+1, log_dir)
         log_metrics(metrics, start_time, epoch+1, log_dir)
     
