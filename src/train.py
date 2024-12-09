@@ -67,7 +67,7 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
     else:
         print("incorrect modeltype specified for training generation")
 
-def train_classifier(X, y, subset_labels, num_samples_per_class, img_size):  
+def train_classifier(X, y, subset_labels, num_samples_per_class, img_size, model_configs):  
     # ensure data loaded properly by inspecting an image or two or 10
     rand_idxs = np.random.randint(0, X.shape[0], 10)    
     for rand_idx in rand_idxs:
