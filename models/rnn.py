@@ -396,8 +396,7 @@ def validate(
 
 
 def train_rnn(
-        X,
-        y,
+        dataset,
         subset_labels,
         device,
         rnn_config,
