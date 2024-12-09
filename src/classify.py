@@ -84,7 +84,11 @@ def load_model(checkpoint_path, device):
             self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=3)
             self.conv2 = torch.nn.Conv2d(32, 64, kernel_size=3)
             self.fc1 = torch.nn.Linear(64 * 5 * 5, 128)
-            self.fc2 = torch.nn.Linear(128, len(label_subset))
+
+            # *** CHANGE THIS ***
+            # comment out issue line and hardcoded num classes temporarily
+            #self.fc2 = torch.nn.Linear(128, len(label_subset))
+            self.fc2 = torch.nn.Linear(128, 10)
 
         def forward(self, x):
             x = torch.relu(self.conv1(x))

@@ -36,10 +36,11 @@ class classifierCNN(nn.Module):
 
 
 # Training function
-def train_model(model, train_loader, criterion, optimizer, device):
+def train_model(model, train_loader, criterion, cur_epoch, num_epochs, optimizer, device):
     model.train()
     total_loss, correct = 0, 0
-    for images, labels in train_loader:
+    train_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Training Progress:{cur_epoch+1}/{num_epochs}")
+    for batch_idx, (images, labels) in train_bar:
         images, labels = images.to(device), labels.to(device)
 
         # Forward pass
@@ -60,11 +61,12 @@ def train_model(model, train_loader, criterion, optimizer, device):
     return total_loss / len(train_loader), accuracy
 
 # Validation function
-def validate_model(model, val_loader, criterion, device):
+def validate_model(model, val_loader, criterion, cur_epoch, num_epochs, device):
     model.eval()
     total_loss, correct = 0, 0
+    val_bar = tqdm(val_loader, total=len(val_loader), desc=f"Validating Epoch:{cur_epoch+1}/{num_epochs}")
     with torch.no_grad():
-        for images, labels in val_loader:
+        for images, labels in val_bar:
             images, labels = images.to(device), labels.to(device)
 
             # Forward pass
@@ -179,11 +181,9 @@ def train_cnn(X, y, device, image_size, model_configs, subset_labels):
     )
     print(model_summary)
 
-
-    # Training loop with tqdm
-    for epoch in tqdm(range(num_epochs), desc="Training Progress", unit="epoch"):
-        train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device)
-        val_loss, val_accuracy = validate_model(model, val_loader, criterion, device)
+    for epoch in range(num_epochs):
+        train_loss, train_accuracy = train_model(model, train_loader, criterion, epoch, num_epochs, optimizer, device)
+        val_loss, val_accuracy = validate_model(model, val_loader, criterion, epoch, num_epochs, device)
 
         # Logging
         print(f"\nEpoch {epoch+1}/{num_epochs}")
