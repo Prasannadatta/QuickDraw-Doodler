@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 # from src.process_data import init_sequential_dataloaders
-from src.metrics_visualize import plot_cnn_metrics, log_metrics
+from utils.metrics_visualize import plot_cnn_metrics, log_metrics
 from tqdm import tqdm
 
 # main model
@@ -150,46 +150,46 @@ def train_cnn(X, y, device, image_size, model_configs):
         'val': {'loss': [], 'accuracy': []}
     }
 
-# Training loop with tqdm
-for epoch in tqdm(range(num_epochs), desc="Training Progress", unit="epoch"):
-    train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device)
-    val_loss, val_accuracy = validate_model(model, val_loader, criterion, device)
+    # Training loop with tqdm
+    for epoch in tqdm(range(num_epochs), desc="Training Progress", unit="epoch"):
+        train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device)
+        val_loss, val_accuracy = validate_model(model, val_loader, criterion, device)
 
-    # Logging
-    print(f"\nEpoch {epoch+1}/{num_epochs}")
-    print(f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%")
-    print(f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
+        # Logging
+        print(f"\nEpoch {epoch+1}/{num_epochs}")
+        print(f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%")
+        print(f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
 
-    # Save metrics
-    metrics['train']['loss'].append(train_loss)
-    metrics['train']['accuracy'].append(train_accuracy)
-    metrics['val']['loss'].append(val_loss)
-    metrics['val']['accuracy'].append(val_accuracy)
+        # Save metrics
+        metrics['train']['loss'].append(train_loss)
+        metrics['train']['accuracy'].append(train_accuracy)
+        metrics['val']['loss'].append(val_loss)
+        metrics['val']['accuracy'].append(val_accuracy)
 
-    # Save model per epoch
-    cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    model_fp = "output/classifier_model/"
-    model_fn = f"classifierCNN_epoch{epoch+1}_{cur_time}.pt"
-    os.makedirs(model_fp, exist_ok=True)
+        # Save model per epoch
+        cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        model_fp = "output/classifier_model/"
+        model_fn = f"classifierCNN_epoch{epoch+1}_{cur_time}.pt"
+        os.makedirs(model_fp, exist_ok=True)
 
-    torch.save({
-        'epoch': epoch + 1,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'train_loss': train_loss,
-        'val_loss': val_loss
-    }, model_fp + model_fn + '.pt')
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': train_loss,
+            'val_loss': val_loss
+        }, model_fp + model_fn + '.pt')
 
-    # Create and save logs
-    with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
-        model_summary_file.write(str(model_summary))
+        # Create and save logs
+        with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
+            model_summary_file.write(str(model_summary))
 
-    # Metrics visualization and logging
-    log_dir = "output/classifier_model_metrics/"
-    plot_cnn_metrics(metrics, cur_time, epoch + 1, log_dir)
-    log_metrics(metrics, cur_time, epoch + 1, log_dir)
+        # Metrics visualization and logging
+        log_dir = "output/classifier_model_metrics/"
+        plot_cnn_metrics(metrics, cur_time, epoch + 1, log_dir)
+        log_metrics(metrics, cur_time, epoch + 1, log_dir)
     
-# Final Test Metrics
+    # Final Test Metrics
     test_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_metrics = test_model(model, test_loader, device, class_names)
 
