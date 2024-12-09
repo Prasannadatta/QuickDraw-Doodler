@@ -3,34 +3,21 @@ import torchvision.transforms as transforms
 from PIL import Image
 import matplotlib.pyplot as plt
 import os
+from models.cnn import classifierCNN
 
-def handle_doodle_classification(image_path, device):
-    """
-    Classifies a doodle image into one of the predefined label subsets.
+#ask brandon how to?
+def load_model(model_fp, device):
+    # Instantiate and load model
+    model = classifierCNN().to(device)
+    checkpoint = torch.load(model_fp, map_location=device, weights_only=True)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model
 
-    Parameters:
-        image_path (str): Path to the doodle image to classify.
-        device (torch.device): Device (CPU/GPU) on which the model is loaded.
+def handle_doodle_classification(model_type, model_fp, device, subset_labels, image_path="output/sample_outputs/apple-17730.png"):
+    if not os.path.isfile(model_fp):
+        raise FileNotFoundError(f"Error: File not found at path specified: {model_fp}")
 
-    Returns:
-        str: Predicted label.
-    """
-    # Paths to model checkpoint and label subset
-    classifier_model = "trained_models/classifierCNN_epoch12_20241208-201712.pt"
-    label_subset_path = "label_subset.txt"  # Replace with the actual path to your label subset file
-
-    # Step 1: Load the model
-    if not os.path.exists(classifier_model):
-        raise FileNotFoundError(f"Model checkpoint not found at {classifier_model}")
-    
-    model = load_model(classifier_model, device)
-
-    # Step 2: Load the label subset or may be just get that array
-    if not os.path.exists(label_subset_path):
-        raise FileNotFoundError(f"Label subset file not found at {label_subset_path}")
-    
-    with open(label_subset_path, "r") as file:
-        label_subset = [line.strip() for line in file.readlines()]
+    model = load_model(model_fp, device)
 
     # Step 3: Define the preprocessing transformations
     transform = transforms.Compose([
@@ -55,51 +42,13 @@ def handle_doodle_classification(image_path, device):
         _, predicted_idx = torch.max(outputs, 1)  # Get index of the max logit value
     
     # Step 6: Get the predicted label
-    predicted_label = label_subset[predicted_idx.item()]
+    predicted_label = subset_labels[predicted_idx.item()]
 
     # Step 7: Display the image with the predicted label
     plt.imshow(image)
     plt.title(f"Prediction: {predicted_label}")
     plt.axis('off')
     plt.show()
+    print(f"Prediction: {predicted_label}")
 
     return predicted_label
-
-#ask brandon how to?
-def load_model(checkpoint_path, device):
-    """
-    Loads the model from a checkpoint.
-
-    Parameters:
-        checkpoint_path (str): Path to the model checkpoint.
-        device (torch.device): Device (CPU/GPU) to load the model.
-
-    Returns:
-        torch.nn.Module: Loaded model.
-    """
-    # Define the CNN model architecture
-    class SimpleCNN(torch.nn.Module):
-        def __init__(self):
-            super(SimpleCNN, self).__init__()
-            self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=3)
-            self.conv2 = torch.nn.Conv2d(32, 64, kernel_size=3)
-            self.fc1 = torch.nn.Linear(64 * 5 * 5, 128)
-
-            # *** CHANGE THIS ***
-            # comment out issue line and hardcoded num classes temporarily
-            #self.fc2 = torch.nn.Linear(128, len(label_subset))
-            self.fc2 = torch.nn.Linear(128, 10)
-
-        def forward(self, x):
-            x = torch.relu(self.conv1(x))
-            x = torch.max_pool2d(torch.relu(self.conv2(x)), 2)
-            x = x.view(x.size(0), -1)
-            x = torch.relu(self.fc1(x))
-            x = self.fc2(x)
-            return x
-
-    # Instantiate and load model
-    model = SimpleCNN().to(device)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    return model

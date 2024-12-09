@@ -3,7 +3,7 @@ from enum import Enum
 class Mode(Enum):
     TRAIN = 'train'
     GENERATE = 'generate'
-    CLASSIFY = 'classify'
+    CLASSIFY = 'infer'
 
 class DataMode(Enum):
     FULL = 'full' # includes strokes taken to complete drawing
