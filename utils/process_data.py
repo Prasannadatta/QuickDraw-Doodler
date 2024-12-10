@@ -202,6 +202,13 @@ def pad_batch(sequences, max_len):
         output[i,:l,:] = seq[:l,:]
     return output
 
+class CollateFn:
+    def __init__(self, max_seq_len):
+        self.max_seq_len = max_seq_len
+
+    def __call__(self, batch):
+        return collate_sketches(batch, self.max_seq_len)
+
 def collate_sketches(batch, max_len=250):
     # batch: list of (stroke_6, length, label)
     batch.sort(key=lambda x: x[1], reverse=True)
@@ -223,8 +230,8 @@ def init_sequential_dataloaders(X, y, config):
     3. init dataloaders
     """
     # shuffle and split data while ensuring balance class distribution
-    Xtrain, Xeval, ytrain, yeval = train_test_split(X, y, test_size=0.3, stratify=y)
-    Xval, Xtest, yval, ytest = train_test_split(Xeval, yeval, test_size=0.3, stratify=yeval)
+    Xtrain, Xeval, ytrain, yeval = train_test_split(X, y, test_size=0.2, stratify=y)
+    Xval, Xtest, yval, ytest = train_test_split(Xeval, yeval, test_size=0.1, stratify=yeval)
 
     # custom datasets
     train_dataset = SequentialStrokeData(
@@ -245,10 +252,14 @@ def init_sequential_dataloaders(X, y, config):
         max_len=config['max_seq_len']
     )
 
+    # collate fn needs max_len arg, but can't pass arg directly to it in Dataloader
+    # use class that returns collate fn with this arg
+    collate = CollateFn(config['max_seq_len'])
+
     # dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate_sketches, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_sketches, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_sketches, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate, num_workers=4)
 
     return train_loader, val_loader, test_loader
 
