@@ -1,8 +1,8 @@
 # QuickDraw-Doodler
-Final Project for ECS 271 Machine Learning and Discovery at UC Davis. Project will be able to generate learned doodles in the way humans are able to, as well as classify various doodles from other people. Both using Google's [QuickDraw! Dataset](https://github.com/googlecreativelab/quickdraw-dataset).
+Novel extension of [Google's SketchRNN]([https://github.com/googlecreativelab/quickdraw-dataset](https://arxiv.org/abs/1704.03477)) to model spatial *and* temporal dimensions of hand drawn sketches. Final Project for ECS 271 Machine Learning and Discovery at UC Davis.
 
 ## Project Goal
-Google has already trained a Sequence2Sequence Variational Autoencoder for this dataset. However they only fed the spatial dimensions and binary pen state of the stroke sequences (dx, dy, and p), even though the dataset recorded the time of the strokes and individual stroke progression (dt). The goal of this project is to incorporate the timing of these sketches. Capturing the temporal aspect as well as spatial. This allows us to not only model the pathing that humans draw sketches, but also learn the time variation between and within strokes. 
+Using Google's [QuickDraw! Dataset](https://github.com/googlecreativelab/quickdraw-dataset), our aim is to model and generate the way humans sketch objects. Google has already trained a Sequence2Sequence Variational Autoencoder for this dataset. However they only fed the spatial dimensions and binary pen state of the stroke sequences (dx, dy, and p), even though the dataset recorded the time of the strokes and individual stroke progression (dt). The goal of this project is to incorporate the timing of these sketches. Capturing the temporal aspect as well as spatial. This allows us to not only model the pathing that humans draw sketches, but also learn the time variation between and within strokes. 
 
 
 <p align="center">
