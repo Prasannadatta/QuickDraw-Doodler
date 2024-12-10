@@ -69,7 +69,7 @@ Once training is complete, you can generate new doodles or perform inference usi
 `python main.py -m generate -mt rnn -l cat -mp path/to/trained_model.pt`
 
 - Classify/infer on a doodle with a trained model (model path required):
-`python main.py -m infer -mt cnn -mp path/to/trained_model.pt`
+`python main.py -m infer -dm reduced -mt cnn -mp path/to/trained_model.pt`
 
 ## Data Structure
 1. **full**: Used for the generator, this comes from the raw dataset and once downloaded will contain the x, y, and t values of strokes taken for doodles. These are converted into (sequence_len, 4) vectors and all normalized and converted to relative position/time (deltas) instead of global. Additionally we had a binary pen state where `0` indicates the pen is lifted (i.e. moving to new location without drawing) and `1` indicates pen is down and drawing.

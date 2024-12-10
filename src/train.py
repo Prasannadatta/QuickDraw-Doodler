@@ -33,7 +33,7 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
         train_classifier(X, y, subset_labels, num_samples_per_class, 255, model_configs)
 
     if data_mode == DataMode.REDUCED: # x is 28x28 final image data
-        train_classifier(X, y, subset_labels, num_samples_per_class, 28, model_configs)
+        train_classifier(X, y, subset_labels, num_samples_per_class, 28, model_configs, device)
     
     
 def train_generator(X, y, subset_labels, model_type, device, model_configs): 
@@ -67,10 +67,10 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
     else:
         print("incorrect modeltype specified for training generation")
 
-def train_classifier(X, y, subset_labels, num_samples_per_class, img_size):  
+def train_classifier(X, y, subset_labels, num_samples_per_class, img_size, model_configs, device):  
     # ensure data loaded properly by inspecting an image or two or 10
     rand_idxs = np.random.randint(0, X.shape[0], 10)    
     for rand_idx in rand_idxs:
         test_display_img(X[rand_idx], subset_labels[y[rand_idx]], rand_idx)
-
-    cnn.train_cnn(X, y)
+    #changed the function name
+    cnn.train_cnn(X, y, device, img_size, model_configs['cnn'], subset_labels)

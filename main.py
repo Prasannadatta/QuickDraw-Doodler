@@ -79,7 +79,7 @@ def main():
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
     if args.mode == Mode.CLASSIFY:
-        handle_doodle_classification()
+        handle_doodle_classification(args.model_type, args.model_path, device, subset_labels)
 
     if args.mode == Mode.GENERATE:
         handle_doodle_generation(args.model_type, args.model_path, device, args.label)

@@ -75,3 +75,40 @@ def log_metrics(metrics, cur_time, cur_epoch, log_dir):
 
     print(f"Metrics and hyperparameters logged to: {filepath}")
     return filepath
+
+# function created for cnn
+def plot_cnn_metrics(metrics, cur_time, cur_epoch, save_dir):
+    """
+    Plots training and validation metrics for the CNN as subplots (1x2 grid).
+    Each metric is plotted against the number of epochs.
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    epochs = range(1, cur_epoch + 1)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    fig.suptitle("CNN Metrics Over Epochs", fontsize=16)
+
+    # Train and validation losses
+    axes[0].plot(epochs, metrics['train']['loss'], label='Train Loss', color='blue')
+    axes[0].plot(epochs, metrics['val']['loss'], label='Validation Loss', color='orange')
+    axes[0].set_title('Loss')
+    axes[0].set_xlabel('Epochs')
+    axes[0].set_ylabel('Loss')
+    axes[0].legend()
+
+    # Train and validation accuracies
+    axes[1].plot(epochs, metrics['train']['accuracy'], label='Train Accuracy', color='green')
+    axes[1].plot(epochs, metrics['val']['accuracy'], label='Validation Accuracy', color='red')
+    axes[1].set_title('Accuracy')
+    axes[1].set_xlabel('Epochs')
+    axes[1].set_ylabel('Accuracy (%)')
+    axes[1].legend()
+
+    # Adjust layout
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+    # Save the plot
+    fn = f"ClassifierCNN_{cur_epoch}_{cur_time}.png"
+    fp = os.path.join(save_dir, fn)
+    plt.savefig(fp, dpi=400)
+    print(f"Metrics plot saved at: {fp}")    

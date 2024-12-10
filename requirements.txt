@@ -9,3 +9,4 @@ pillow
 numpy
 opencv-python
 tqdm
+seaborn

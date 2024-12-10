@@ -7,6 +7,9 @@ quickdraw_data/reduced/*
 output/figs/*
 output/model_ckpts/*.pt
 output/model_metrics/*
+output/classifier_model/*
+output/classifier_model_metrics/*
+output/classifier_test_loop/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
