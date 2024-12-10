@@ -110,3 +110,23 @@ Once training is complete, you can generate new doodles or perform inference usi
 
 - `config/subset_classes.json` is where we specify the list of classes used for each of the 3 modes, since using all 354 classes would be insane for a class project. 
 - `config/model_params.json` is where we specify the dict of hyperparameters for the RNN and CNN. 
+
+
+---
+
+
+## vae WIP
+
+- weight inits
+  - fc layer xavier-glorot
+  - lstm in to hidden xavier-glorot
+  - lstm hidden to hidden orthogonal
+
+- remove label conditions
+- remove attention bullshit
+- encoder pack padded sequences
+- handle SOS/EOS tokens in training
+- add correct recurrent dropout
+- layer norm - decoder?
+
+- remove teacher forcing/mask stuff?

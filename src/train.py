@@ -4,7 +4,7 @@ import json
 
 from utils.get_data import *
 from utils.process_data import SequentialStrokeData, test_display_img
-from models import cnn, rnn
+from models import cnn, vae
 from utils.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
 from utils.enum_types import DataMode, ModelType
 
@@ -52,7 +52,7 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
         rnn_configs = model_configs['rnn']
         #animate_strokes(Xnorm[rand_idxs[0]], use_actual_time=False, save_gif=True, gif_fp="output/doodle_anims/const_time.gif")
 
-        rnn.train_rnn(X, y, subset_labels, device, rnn_configs)
+        vae.train_rnn(X, subset_labels, device, rnn_configs)
 
     else:
         print("incorrect modeltype specified for training generation")

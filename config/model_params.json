@@ -26,7 +26,7 @@
         "dec_hidden_size": 128,
         "attention_size": 0,
         "latent_size": 64,
-        "num_lstm_layers": 4,
+        "num_lstm_layers": 2,
         "num_mdn_modes": 20,
         "kl_div_coeff": 1,
         "dropout": 0.0,

@@ -102,13 +102,6 @@ class MDN:
             Tensor: Scalar tensor representing the mean reconstruction loss.
         """
         dx, dy, dt, pen_state = target[..., 0], target[..., 1], target[..., 2], target[..., 3].long()  # Split target
-        '''
-        print("dx shape:", dx.shape, "min:", dx.min().item(), "max:", dx.max().item())
-        print("dy shape:", dy.shape, "min:", dy.min().item(), "max:", dy.max().item())
-        print("dt shape:", dt.shape, "min:", dt.min().item(), "max:", dt.max().item())
-        print("pen_state shape:", pen_state.shape, "unique values:", pen_state.unique())
-        print("Mask shape:", mask.shape, "unique values:", mask.unique())
-        '''
 
         # bivariate distribution probabilities for dx and dy
         spatial_prob = self._bivariate_normal(dx, dy)
