@@ -396,7 +396,8 @@ def validate(
 
 
 def train_rnn(
-        dataset,
+        X,
+        y,
         subset_labels,
         device,
         rnn_config,
@@ -408,12 +409,11 @@ def train_rnn(
     rnn_signature = inspect.signature(DoodleGenRNN.__init__)
     rnn_params = {k: v for k, v in rnn_config.items() if k in rnn_signature.parameters}
 
-    # prepare dataloaders
-    train_loader, val_loader, test_loader = init_sequential_dataloaders(X, y, rnn_config['batch_size'])
+    print("Preparing dataset...")
+    train_loader, val_loader, _ = init_sequential_dataloaders(X, y, rnn_config)
 
     rnn = DoodleGenRNN(**rnn_params).to(device)
 
-    reconstruction_criterion = nn.MSELoss() # measure how well did gen and real seqs match (only part of total loss)
     optim = Adam(rnn.parameters(), rnn_config['learning_rate'])
 
     # get shape of sample to give as input to summary

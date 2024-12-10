@@ -16,6 +16,7 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
     # map label names to idxs
     label_map = {label: i for i, label in enumerate(subset_labels)}
 
+    print("Gathering data...")
     if data_mode == DataMode.FULL:
         download_stroke_data(subset_labels, data_mode, num_samples_per_class) # download strokes from full dataset
         X, y = load_stroke_data(subset_labels, data_mode, num_samples_per_class) # grab and parse .npy files (one file for each class)
@@ -38,9 +39,7 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
     
 def train_generator(X, y, subset_labels, model_type, device, model_configs): 
     # ensure data loaded properly by inspecting an image or two
-    print("Normalizing stroke data...")
-
-    print("Rasterizing samples...")
+    print("Rasterizing sample sketches...")
     rand_idxs = np.random.randint(0, X.shape[0], len(subset_labels))
     for rand_idx in rand_idxs:
         X_vec = full_strokes_to_vector_images(X[rand_idx])
@@ -51,17 +50,9 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
 
     if model_type == ModelType.RNN:
         rnn_configs = model_configs['rnn']
-        print("Normalizing stroke data...")
         #animate_strokes(Xnorm[rand_idxs[0]], use_actual_time=False, save_gif=True, gif_fp="output/doodle_anims/const_time.gif")
 
-        dataset = SequentialStrokeData(
-            X,
-            y,
-            rnn_configs['max_seq_len'],
-            random_scale_factor=rnn_configs['random_scale_factor'],
-            augment_stroke_prob=rnn_configs['augment_stroke_prob']
-        )
-        rnn.train_rnn(dataset, subset_labels, device, rnn_configs)
+        rnn.train_rnn(X, y, subset_labels, device, rnn_configs)
 
     else:
         print("incorrect modeltype specified for training generation")

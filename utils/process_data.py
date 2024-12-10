@@ -10,7 +10,7 @@ import os
 class SequentialStrokeData(Dataset):
     def __init__(
             self,
-            strokes,        # list of np arrs dims N x (x, y, t, p)
+            strokes,        # list of np arrs dims (x, y, t, p) x N; (will be transposed to Nx4)
             labels=None,    # array of labels (same length as strokes)
             max_len=250,    # max sequence len
             random_scale_factor=0.0,    # amt to randomly scale stokes
@@ -23,30 +23,37 @@ class SequentialStrokeData(Dataset):
         self.augment_stroke_prob = augment_stroke_prob
         self.limit = limit
 
-        self.strokes, self.sort_idx = self.preprocess(strokes)
+        print("Preprocessing data...")
+        self.strokes, self.sort_idx = self.preprocess(strokes) # list of np arrs dims N x (x, y, t, p)
+
         if labels is not None:
             self.labels = torch.tensor(labels, dtype=torch.long)[self.sort_idx]
         else:
             self.labels = None
             
         # Compute global normalization stats (x,y,t)
+        print("Computing normalization stats...")
         self.x_mean, self.x_std, self.y_mean, self.y_std, self.t_mean, self.t_std = self.calculate_global_stats()
 
     def preprocess(self, strokes):
         """
-        Filter long sequences, convert to tensors, clamp values, sort by sequence lens
+        Transpose to shape (N,4), filter long sequences, convert to tensors, clamp values, sort by sequence lens
         """
         raw_data = []
         seq_len = []
         count_data = 0
-        for s in strokes:
-            if len(s) <= self.max_len:
-                s = to_tensor(s)
-                s = s.clone()
-                s[:,:2] = s[:,:2].clamp(-self.limit, self.limit)  # clamp x,y
-                raw_data.append(s)
-                seq_len.append(len(s))
+        for stroke in strokes:
+            if stroke.shape[0] == 4: # if 4xN, transpose to Nx4
+                stroke = stroke.T
+            
+            # only take strokes less than hp arg for max length
+            if len(stroke) <= self.max_len:
+                stroke = to_tensor(stroke) # convert stroke np arr to tensor
+                stroke[:,:2].clamp_(-self.limit, self.limit)  # clamp x,y (inplace)
+                raw_data.append(stroke)
+                seq_len.append(len(stroke))
                 count_data += 1
+
         sort_idx = np.argsort(seq_len)
         processed_strokes = [raw_data[ix] for ix in sort_idx]
         print(f"total drawings <= max_seq_len is {count_data}")
@@ -64,6 +71,8 @@ class SequentialStrokeData(Dataset):
         y_mean, y_std = y.mean(), y.std()
         t_mean, t_std = t.mean(), t.std()
 
+        print(x_mean, x_std, y_mean, y_std, t_mean, t_std)
+
         return x_mean, x_std, y_mean, y_std, t_mean, t_std
 
     def __len__(self):
@@ -76,7 +85,7 @@ class SequentialStrokeData(Dataset):
         if self.augment_stroke_prob > 0:
             data = random_augment(data, self.augment_stroke_prob)
 
-        # Normalize (x,y,t)
+        # Normalize (x,y,t) using global stats from above
         data[:,0] = (data[:,0] - self.x_mean)/self.x_std
         data[:,1] = (data[:,1] - self.y_mean)/self.y_std
         data[:,2] = (data[:,2] - self.t_mean)/self.t_std
@@ -101,8 +110,7 @@ class SequentialStrokeData(Dataset):
         eos = torch.tensor([0,0,0,0,0,1], dtype=stroke_6.dtype).unsqueeze(0)
         stroke_6 = torch.cat([stroke_6, eos], dim=0)
 
-        # Add SOS token at the start if requested
-        # SOS = [0,0,0,0,0,0]
+        # Add SOS token at the start
         sos = torch.zeros(1,6, dtype=stroke_6.dtype)
         stroke_6 = torch.cat([sos, stroke_6], dim=0) # (N+2,6)
 
@@ -207,7 +215,7 @@ def collate_sketches(batch, max_len=250):
     data = pad_batch(data, max_len)
     return data, lengths, labels
 
-def init_sequential_dataloaders(X, y, batch_size):
+def init_sequential_dataloaders(X, y, config):
     """
     Take in data in numpy normalized format and:
     1. strat split data
@@ -219,18 +227,35 @@ def init_sequential_dataloaders(X, y, batch_size):
     Xval, Xtest, yval, ytest = train_test_split(Xeval, yeval, test_size=0.3, stratify=yeval)
 
     # custom datasets
-    train_dataset = SequentialStrokeData(Xtrain, ytrain)
-    val_dataset = SequentialStrokeData(Xval, yval)
-    test_dataset = SequentialStrokeData(Xtest, ytest)
+    train_dataset = SequentialStrokeData(
+        Xtrain,
+        ytrain,
+        max_len=config['max_seq_len'],
+        random_scale_factor=config['random_scale_factor'],
+        augment_stroke_prob=config['augment_stroke_prob']
+    )
+    val_dataset = SequentialStrokeData(
+        Xval,
+        yval,
+        max_len=config['max_seq_len']
+    )
+    test_dataset = SequentialStrokeData(
+        Xtest,
+        ytest,
+        max_len=config['max_seq_len']
+    )
 
     # dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=sequential_collate_fn, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=sequential_collate_fn, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=sequential_collate_fn, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate_sketches, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_sketches, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_sketches, num_workers=4)
 
     return train_loader, val_loader, test_loader
 
 def local_normalize_stroke_data(data):
+    '''
+    Old method of normalizing pen stroke data, normalized within samples instead of globally
+    '''
     norm_data = np.empty(data.shape[0], dtype=object)
     stats = []  # List to store min and max values for x, y, and t for each sample
     for i, sample in enumerate(data):
@@ -265,6 +290,10 @@ def local_normalize_stroke_data(data):
     return norm_data, stats
 
 def unnormalize_stroke_data(norm_data, stats):
+    '''
+    probably doesn't work anymore since changing data methods,
+    but don't really need it so not fixing it til i do
+    '''
     unnorm_data = np.empty(norm_data.shape[0], dtype=object)
     for i, sample in enumerate(norm_data):
         dx, dy, dt, p = sample[:, 0], sample[:, 1], sample[:, 2], sample[:, 3]
