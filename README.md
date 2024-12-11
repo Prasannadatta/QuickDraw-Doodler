@@ -117,16 +117,20 @@ Once training is complete, you can generate new doodles or perform inference usi
 
 ## vae WIP
 
-- weight inits
-  - fc layer xavier-glorot
-  - lstm in to hidden xavier-glorot
-  - lstm hidden to hidden orthogonal
+- [x] weight inits
+  - [x] fc layer xavier-glorot
+  - [x] lstm in to hidden xavier-glorot
+  - [x] lstm hidden to hidden orthogonal
 
-- remove label conditions
-- remove attention bullshit
-- encoder pack padded sequences
-- handle SOS/EOS tokens in training
-- add correct recurrent dropout
-- layer norm - decoder?
-
-- remove teacher forcing/mask stuff?
+- [x] remove label conditions
+  - (label args still remain for later updates)
+- [x] remove attention bullshit
+- [x] encoder pack padded sequences
+- [x] handle SOS/EOS tokens in training
+- [x] check kl loss
+- [ ] check recon loss
+- [ ] check mdn layers
+  - fc layer may be missing
+- [ ] add correct recurrent dropout
+- [ ] layer norm - decoder?
+- [ ] WEIGHT P VALUES

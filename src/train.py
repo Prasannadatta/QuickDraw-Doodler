@@ -52,7 +52,7 @@ def train_generator(X, y, subset_labels, model_type, device, model_configs):
         rnn_configs = model_configs['rnn']
         #animate_strokes(Xnorm[rand_idxs[0]], use_actual_time=False, save_gif=True, gif_fp="output/doodle_anims/const_time.gif")
 
-        vae.train_rnn(X, subset_labels, device, rnn_configs)
+        vae.train_rnn(X, y, subset_labels, device, rnn_configs)
 
     else:
         print("incorrect modeltype specified for training generation")

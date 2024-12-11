@@ -12,7 +12,7 @@ class SequentialStrokeData(Dataset):
             self,
             strokes,        # list of np arrs dims (x, y, t, p) x N; (will be transposed to Nx4)
             labels=None,    # array of labels (same length as strokes)
-            max_len=250,    # max sequence len
+            max_len=250,           # max len of strokes to consider
             random_scale_factor=0.0,    # amt to randomly scale stokes
             augment_stroke_prob=0.0,    # chance to augment strokes
             limit=1000
@@ -125,6 +125,15 @@ class SequentialStrokeData(Dataset):
 
         # Return (data, length, label) similar to what you'd do for a collate_fn
         return (stroke_6, length, label)
+
+def get_max_seq_len(sequences):
+    max_len = -1
+    for seq in sequences:
+        cur_seq_len = len(seq)
+        if len(seq) > max_len:
+            max_len = cur_seq_len
+
+    return max_len
 
 def to_tensor(x):
     if isinstance(x, torch.Tensor):

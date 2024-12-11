@@ -5,7 +5,8 @@ quickdraw_data/reduced/*
 .hfcache
 
 output/figs/*
-output/model_ckpts/*.pt
+output/model_ckpts/*
+output/
 output/model_metrics/*
 output/classifier_model/*
 output/classifier_model_metrics/*

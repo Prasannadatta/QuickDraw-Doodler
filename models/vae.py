@@ -1,5 +1,5 @@
 import torch
-from torch.optim import Adam
+from torch.optim import Adam, lr_scheduler
 import torch.nn as nn
 import torch.nn.functional as F
 from torchinfo import summary
@@ -29,7 +29,7 @@ class DoodleGenRNN(nn.Module):
         ):
 
         super(DoodleGenRNN, self).__init__()
-
+        self.apply(init_weights)
         self.mdn = MDN(num_mdn_modes)
 
         self.enc_hidden_size = enc_hidden_size
@@ -38,7 +38,7 @@ class DoodleGenRNN(nn.Module):
         self.num_mdn_modes = num_mdn_modes
         self.latent_size = latent_size
 
-        # encode sequential stroke data with NOT bidirectional LSTM (measuring temporal dynamics)
+        # encode sequential stroke data with bidirectional LSTM
         # final hidden state of lstm defines the latent space
         self.lstm_encoder = nn.LSTM(
             input_size=in_size,
@@ -53,19 +53,19 @@ class DoodleGenRNN(nn.Module):
         # latent space -> compressed representation of input data to lower dimensional space
         # like convolutions grab most important features, this latent space will learn the same
         # essentially hidden lstm to latent space, but with reparameterizing to sample from gaussian dist of mean and var of hidden
-        self.hidden_to_mu_fc = nn.Linear(enc_hidden_size * 2, latent_size) # * 2 for bidirectionality
-        self.hidden_to_logvar_fc = nn.Linear(enc_hidden_size * 2, latent_size)
+        self.decoder_to_latent_mu_fc = nn.Linear(enc_hidden_size * 2, latent_size) # * 2 for bidirectionality
+        self.decoder_to_latent_logvar_fc = nn.Linear(enc_hidden_size * 2, latent_size)
 
         # decoder LSTM
-        self.latent_to_hidden_fc_h = nn.Linear(latent_size*2, dec_hidden_size)
-        self.latent_to_hidden_fc_c = nn.Linear(latent_size*2, dec_hidden_size)
+        self.latent_to_decoder_h_fc = nn.Linear(latent_size, dec_hidden_size)
+        self.latent_to_decoder_c_fc = nn.Linear(latent_size, dec_hidden_size)
         self.lstm_decoder = nn.LSTM(
             input_size=in_size,
             hidden_size=dec_hidden_size,
             num_layers=num_lstm_layers,
             dropout=dropout,
             batch_first=True,
-            bidirectional=False
+            bidirectional=False # not bidirectional to produce sequentially
         )
 
         # different input sizes for with and without attention mechanisms
@@ -73,7 +73,7 @@ class DoodleGenRNN(nn.Module):
         #  -> 8 gaussian params (mu_dx, mu_dy, mu_dt, sigma_dx, sigma_dy. sigma_dt, rho (correlation), pi, (mixing coefficient))
         # num_mdn_modes -> how many modes the Mixture Density Network will predict (default 20)
         # +3 -> pen states 0, 1, 2
-        self.hidden_to_output_fc = nn.Linear(dec_hidden_size, (8 * num_mdn_modes) + 3)
+        self.decoder_to_gmm_fc = nn.Linear(dec_hidden_size, (8 * num_mdn_modes) + 3)
 
 
     def encode(self, x, lengths):
@@ -88,12 +88,12 @@ class DoodleGenRNN(nn.Module):
         _, (hn, _) = self.lstm_encoder(x)
             
         hidden_final = hn[-2:] # grab last two hidden states (last of forward and last of backward)
-        hn = hidden_final.permute(1,0,2).flatten # reshape to (batch_size, 2*hidden_size)
+        hn = hidden_final.permute(1,0,2).flatten(1).contiguous()  # reshape to (batch_size, 2*hidden_size)
 
         # mu and logvar aren't the actual mean and log of variance of hidden state,
         # rather they're learned params we will use as the "mean" and log of "variance" to sample z from
-        mu = self.hidden_to_mu_fc(hn) # mean of latent vec (z)
-        logvar = self.hidden_to_logvar_fc(hn) # log of variance of latent vec, use log for numerical stability
+        mu = self.decoder_to_latent_mu_fc(hn) # mean of latent vec (z)
+        logvar = self.decoder_to_latent_logvar_fc(hn) # log of variance of latent vec, use log for numerical stability
 
         return mu, logvar
 
@@ -123,12 +123,11 @@ class DoodleGenRNN(nn.Module):
         # only giving label of one class per sample, labels is plural due to batch processing
         # embedding learns relations indirectly since it is involved in the network,
         # but does not directly receive input sequences to associate with labels
-        batch_size = z.size(0)
 
         # prepare hidden state for decoder mapping from z to generate initial hidden state
         # unsqueeze to add dim of num_layers for decoder lstm since it expects (num_layers (1 initially), B, hidden_size)
-        h0 = self.latent_to_hidden_fc_h(z).unsqueeze(0)
-        c0 = self.latent_to_hidden_fc_c(z).unsqueeze(0)
+        h0 = self.latent_to_decoder_h_fc(z).unsqueeze(0)
+        c0 = self.latent_to_decoder_c_fc(z).unsqueeze(0)
         
         # apply appropriate activation to hidden state
         if self.decoder_activations.lower() != 'none':
@@ -146,26 +145,21 @@ class DoodleGenRNN(nn.Module):
         # allowing the decoder to learn separately from the encoder's messy outputs.
         # Prepare inputs
         if inputs is None:
-            inputs = torch.zeros(batch_size, seq_len, self.lstm_decoder.input_size, device=z.device)
+            batch_size = z.size(0)
+            inputs = torch.zeros((batch_size, seq_len.size(0), self.lstm_decoder.input_size), device=z.device)
 
-        # decoding start
         # pass entire sequence through decoder
         decoder_output, _ = self.lstm_decoder(inputs, hidden)
 
-        if self.attention_size > 0:
-            decode_context = self.attention(encoder_output, decoder_output)
-            outputs = self.hidden_to_output_fc(decode_context)
-        else:
-            outputs = self.hidden_to_output_fc(decoder_output)            
+        return decoder_output
 
-        return outputs
-
-    def forward(self, x, seq_len, labels, inputs=None):
+    def forward(self, x, seq_len, labels=None, inputs=None):
         mu, logvar = self.encode(x, seq_len) # encode input sequence
         z = self.reparameterize(mu, logvar) # sample latent vector from encoded sequence
-        out = self.decode(z, seq_len, labels, inputs) # decode latent vector with label condition
+        decoder_output = self.decode(z, seq_len, inputs) # decode latent vector with label condition
+        gmm_outputs = self.decoder_to_gmm_fc(decoder_output) # final fc layer connects decoder output to gmm params       
 
-        return out, mu, logvar
+        return gmm_outputs, mu, logvar
 
 
 def init_weights(model):
@@ -184,7 +178,6 @@ def init_weights(model):
             elif 'bias' in name: # bias init 0
                 nn.init.constant_(param.data, 0.)
 
-
 def compute_anneal_factor(step, kl_weight_start, kl_decay_rate):
     return 1 - (1 - kl_weight_start) * (kl_decay_rate ** step)
 
@@ -201,106 +194,7 @@ def kl_divergence_loss(mu, logvar, anneal_factor):
     kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     return anneal_factor * kl / mu.size(0)
 
-def find_latent_smoothness(all_mus, num_pairs=20, steps=5):
-    if len(all_mus) < 2: # can only calculate distances between at least 2 points
-        return 0  
 
-    all_mus = torch.cat(all_mus, dim=0)
-    n_mus = all_mus.shape[0]
-
-    # randomly sample num_pairs idx pairs
-    idx1 = torch.randint(0, n_mus, (num_pairs,))
-    idx2 = torch.randint(0, n_mus, (num_pairs,))
-    z1 = all_mus[idx1]
-    z2 = all_mus[idx2]
-
-    # steps of interpolations
-    alphas = torch.linspace(0, 1, steps).to(all_mus.device).view(-1, 1, 1)  # (steps, 1, 1)
-
-    # interpolate between z1 and z2 for all num_pairs
-    interpolations = (1 - alphas) * z1.unsqueeze(0) + alphas * z2.unsqueeze(0)  # (steps, num_pairs, latent_dim)
-
-    # euclidean distance between interpolations
-    differences = interpolations[1:] - interpolations[:-1]  # dists between consecutive interpolations
-    distances = torch.norm(differences, dim=-1)  # norm across latent dimensions
-    smoothness = distances.mean().item()  # mean dist as smoothness score
-
-    return smoothness
-'''
-def train_old(
-        epoch,
-        num_epochs,
-        train_loader,
-        rnn,
-        optim,
-        anneal_factor,
-        device,
-        metrics
-):
-    rnn.train()
-
-    # init metrics
-    running_recon_train_loss, running_div_train_loss, running_total_train_loss = 0., 0., 0.
-    latent_variances, unique_outputs, all_train_mus = [], [], []
-    
-    train_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Training Epoch {epoch+1}/{num_epochs}")
-    for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:        
-        # move data to gpu
-        Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
-        
-        # teacher forcing, give decoder sequence and correct next step
-        decoder_inputs = Xbatch[:, :-1, :] # remove last item in sequence
-        decoder_target = Xbatch[:, 1:, :] # remove first item
-        seq_lens = seq_lens - 1
-
-        # forward
-        outputs, mu, logvar = rnn.forward(Xbatch, decoder_inputs.size(1), ybatch, inputs=decoder_inputs)
-        all_train_mus.append(mu.detach().cpu()) # store for latent smoothness metric later
-
-        # loss computation
-        # mask to only find loss for valid sequence points (not padded points)
-        max_seq_len = decoder_inputs.size(1)
-        mask = torch.arange(max_seq_len, device=device).unsqueeze(0) < seq_lens.unsqueeze(1)
-
-        # Loss calculations using Gaussian Mixture Density Network for reconstruction and kl divergence loss with annealing
-        rnn.mdn.get_mixture_coeff(outputs)
-        rec_loss = rnn.mdn.reconstruction_loss(decoder_target, mask)
-
-        #rec_loss = reconstruction_criterion(outputs[mask], decoder_target[mask]) / (seq_lens.sum().item())
-        kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor) / Xbatch.size(0) # how well does generated dis match real data dist
-        loss = rec_loss + kl_div_loss # total loss
-        
-        # backward
-        optim.zero_grad() # zero gradients from prev grad calculation
-        loss.backward() # back propagation to find gradients
-        optim.step() # step down gradient
-
-        # metrics
-        # losses
-        running_total_train_loss += loss.item()
-        running_div_train_loss += kl_div_loss.item()
-        running_recon_train_loss += rec_loss.item()
-
-        latent_variances.append(torch.var(mu, dim=0).mean().item()) # latent space variance
-
-        unique_count = len(torch.unique(outputs, dim=0)) # diversity (unique outputs)
-        unique_outputs.append(unique_count / outputs.size(0)) # diversity ratio to total outputs
-        
-        train_bar.set_postfix(
-            total_loss=running_total_train_loss / (batch_idx + 1),
-            kl_loss=running_div_train_loss / (batch_idx + 1),
-            recon_loss=running_recon_train_loss / (batch_idx + 1)
-        )
-
-    # log metrics
-    n = len(train_loader)
-    metrics['train']['total_loss'].append(running_total_train_loss / n)
-    metrics['train']['kl_div_loss'].append(running_div_train_loss / n)
-    metrics['train']['recon_loss'].append(running_recon_train_loss / n)
-    metrics['train']['latent_variance'].append(sum(latent_variances) / len(latent_variances))
-    metrics['train']['latent_smoothness'].append(find_latent_smoothness(all_train_mus))
-    metrics['train']['unique_ratio'].append(sum(unique_outputs) / len(unique_outputs))
-'''
 def train(
         epoch,
         num_epochs,
@@ -314,47 +208,43 @@ def train(
 ):
     rnn.train()
 
-    # init metrics
     running_recon_train_loss, running_div_train_loss, running_total_train_loss = 0., 0., 0.
     latent_variances, unique_outputs, all_train_mus = [], [], []
     
     train_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Training Epoch {epoch+1}/{num_epochs}")
-    for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:        
-        # move data to gpu
+    for batch_idx, (Xbatch, seq_lens, ybatch) in train_bar:
         Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
 
-        # forward
-        outputs, mu, logvar = rnn.forward(Xbatch, seq_lens, ybatch, inputs=decoder_inputs)
-        all_train_mus.append(mu.detach().cpu()) # store for latent smoothness metric later
-
-        # loss computation
-        # mask to only find loss for valid sequence points (not padded points)
+        # Teacher forcing:
+        # decoder_inputs: the model sees the previous ground truth step as input
+        # decoder_target: what we want the model to predict
+        decoder_inputs = Xbatch[:, :-1, :]   # all but last step as input
+        decoder_target = Xbatch[:, 1:, :]    # all but first step as target
         max_seq_len = decoder_inputs.size(1)
+
+        # Forward pass
+        gmm_outputs, mu, logvar = rnn.forward(Xbatch, seq_lens, inputs=decoder_inputs) # outputs: (B, max_seq_len, output_dim)  
+
+        # Create a mask to ignore padding
         mask = torch.arange(max_seq_len, device=device).unsqueeze(0) < seq_lens.unsqueeze(1)
 
-        # Loss calculations using Gaussian Mixture Density Network for reconstruction and kl divergence loss with annealing
-        rnn.mdn.get_mixture_coeff(outputs)
+        # Reconstruction loss using MDN
+        rnn.mdn.set_mixture_coeff(gmm_outputs) # Mixture coefficients for GMM
         rec_loss = rnn.mdn.reconstruction_loss(decoder_target, mask)
 
-        #rec_loss = reconstruction_criterion(outputs[mask], decoder_target[mask]) / (seq_lens.sum().item())
-        kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor) / Xbatch.size(0) # how well does generated dis match real data dist
-        loss = rec_loss + kl_div_loss # total loss
-        
-        # backward
-        optim.zero_grad() # zero gradients from prev grad calculation
-        loss.backward() # back propagation to find gradients
-        optim.step() # step down gradient
+        kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor) # KL divergence loss
 
-        # metrics
-        # losses
+        loss = rec_loss + kl_div_loss # total loss
+
+        optim.zero_grad() # zero previous iterations grads
+        loss.backward() # back prop
+        optim.step() # take gradient step
+        scheduler.step() # decrease lr
+
+        # update metrics
         running_total_train_loss += loss.item()
         running_div_train_loss += kl_div_loss.item()
         running_recon_train_loss += rec_loss.item()
-
-        latent_variances.append(torch.var(mu, dim=0).mean().item()) # latent space variance
-
-        unique_count = len(torch.unique(outputs, dim=0)) # diversity (unique outputs)
-        unique_outputs.append(unique_count / outputs.size(0)) # diversity ratio to total outputs
         
         train_bar.set_postfix(
             total_loss=running_total_train_loss / (batch_idx + 1),
@@ -367,85 +257,58 @@ def train(
     metrics['train']['total_loss'].append(running_total_train_loss / n)
     metrics['train']['kl_div_loss'].append(running_div_train_loss / n)
     metrics['train']['recon_loss'].append(running_recon_train_loss / n)
-    metrics['train']['latent_variance'].append(sum(latent_variances) / len(latent_variances))
-    metrics['train']['latent_smoothness'].append(find_latent_smoothness(all_train_mus))
-    metrics['train']['unique_ratio'].append(sum(unique_outputs) / len(unique_outputs))
 
 
-def validate(
-        epoch,
-        num_epochs,
-        val_loader,
-        rnn,
-        anneal_factor,
-        device,
-        metrics
-):
+def validate(val_loader, rnn, device, metrics):
     rnn.eval()
+    running_total_loss = 0.
+    running_kl_loss = 0.
+    running_recon_loss = 0.
 
-    # init metrics
-    running_recon_val_loss, running_div_val_loss, running_total_val_loss = 0., 0., 0.
-    latent_variances, unique_outputs, all_val_mus = [], [], []
-    
-    val_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Validating Epoch {epoch+1}/{num_epochs}")
+    # No gradient calculation during validation
     with torch.no_grad():
+        val_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc="Validating")
         for batch_idx, (Xbatch, seq_lens, ybatch) in val_bar:
-            # move data to gpu
-            Xbatch, seq_lens, ybatch = Xbatch.to(device), seq_lens.to(device), ybatch.to(device)
-            
-            decoder_inputs = Xbatch[:, :-1, :] # remove last item in sequence
-            decoder_target = Xbatch[:, 1:, :] # remove first item
-            seq_lens = seq_lens - 1
+            Xbatch, seq_lens = Xbatch.to(device), seq_lens.to(device)
+            ybatch = ybatch.to(device)
 
-            # forward
-            outputs, mu, logvar = rnn.forward(Xbatch, decoder_inputs.size(1), ybatch, inputs=decoder_inputs)
-            all_val_mus.append(mu.detach().cpu()) # store for latent smoothness metric later
-
-            # mask to only find loss for valid sequence points (not padded points)
+            # Teacher forcing in validation as well:
+            decoder_inputs = Xbatch[:, :-1, :]
+            decoder_target = Xbatch[:, 1:, :]
             max_seq_len = decoder_inputs.size(1)
+
+            outputs, mu, logvar = rnn(Xbatch, seq_lens, inputs=decoder_inputs)  # (B, max_seq_len, output_dim)
+
+            # Create mask
             mask = torch.arange(max_seq_len, device=device).unsqueeze(0) < seq_lens.unsqueeze(1)
 
-            # Loss calculations using Gaussian Mixture Density Network for reconstruction and kl divergence loss with annealing
-            rnn.mdn.get_mixture_coeff(outputs)
+            # Get mixture coeffs
+            rnn.mdn.set_mixture_coeff(outputs)
+
+            # Reconstruction loss
             rec_loss = rnn.mdn.reconstruction_loss(decoder_target, mask)
+            # KL divergence (use the same anneal_factor as the last training step or a fixed factor = 1 if you want)
+            # Typically in validation we might just use anneal_factor = 1 since we want to measure full KL
+            kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor=1.0)
 
-            kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor) / Xbatch.size(0) # how well does generated dis match real data dist
-            loss = rec_loss + kl_div_loss # total loss
-            
-            # metrics
-            # losses
-            running_total_val_loss += loss.item()
-            running_div_val_loss += kl_div_loss.item()
-            running_recon_val_loss += rec_loss.item()
+            loss = rec_loss + kl_div_loss
 
-            latent_variances.append(torch.var(mu, dim=0).mean().item()) # latent space variance
+            running_total_loss += loss.item()
+            running_kl_loss += kl_div_loss.item()
+            running_recon_loss += rec_loss.item()
 
-            unique_count = len(torch.unique(outputs, dim=0)) # diversity (unique outputs)
-            unique_outputs.append(unique_count / outputs.size(0)) # diversity ratio to total outputs
-            
             val_bar.set_postfix(
-                total_loss=running_total_val_loss / (batch_idx + 1),
-                kl_loss=running_div_val_loss / (batch_idx + 1),
-                recon_loss=running_recon_val_loss / (batch_idx + 1)
+                total_loss=running_total_loss / (batch_idx + 1),
+                kl_loss=running_kl_loss / (batch_idx + 1),
+                recon_loss=running_recon_loss / (batch_idx + 1)
             )
-
     # log metrics
     n = len(val_loader)
-    metrics['val']['total_loss'].append(running_total_val_loss / n)
-    metrics['val']['kl_div_loss'].append(running_div_val_loss / n)
-    metrics['val']['recon_loss'].append(running_recon_val_loss / n)
-    metrics['val']['latent_variance'].append(sum(latent_variances) / len(latent_variances))
-    metrics['val']['latent_smoothness'].append(find_latent_smoothness(all_val_mus))
-    metrics['val']['unique_ratio'].append(sum(unique_outputs) / len(unique_outputs))
+    metrics['val']['total_loss'].append(running_total_loss / n)
+    metrics['val']['kl_div_loss'].append(running_kl_loss / n)
+    metrics['val']['recon_loss'].append(running_recon_loss / n)
 
-
-def train_rnn(
-        X,
-        subset_labels,
-        device,
-        rnn_config,
-    ):    
-    
+def train_rnn(X, y, subset_labels, device, rnn_config):    
     # get model's params and filter config file for them
     rnn_config.update({'num_labels': len(subset_labels)})
     rnn_config.update({'subset_labels': subset_labels})
@@ -453,22 +316,22 @@ def train_rnn(
     rnn_params = {k: v for k, v in rnn_config.items() if k in rnn_signature.parameters}
 
     print("Preparing dataset...")
-    train_loader, val_loader, _ = init_sequential_dataloaders(X, rnn_config)
+    train_loader, val_loader, _ = init_sequential_dataloaders(X, y, rnn_config)
 
     rnn = DoodleGenRNN(**rnn_params).to(device)
+    rnn.apply(init_weights)
 
-    optim = Adam(rnn.parameters(), rnn_config['learning_rate'])
-
-    scheduler = optim.lr_scheduler.ExponentialLR(optim, rnn_config['lr_decay'])
+    optim = Adam(rnn.parameters(), lr=rnn_config['learning_rate'])
+    scheduler = lr_scheduler.ExponentialLR(optim, rnn_config['lr_decay'])
 
     # get shape of sample to give as input to summary
     for batch in train_loader:
         temp_sample_shape = batch[0].shape
-        temp_seq_len = batch[1][0].item()
+        temp_seq_len = batch[1]
         temp_labels = batch[2]
         break
 
-    model_summary = summary(rnn, input_size=temp_sample_shape, col_names=["input_size", "output_size", "num_params", "trainable"], verbose=0, seq_len=temp_seq_len, labels=temp_labels)
+    model_summary = summary(rnn, input_size=temp_sample_shape, col_names=["input_size", "output_size", "num_params", "trainable"], verbose=0, seq_len=temp_seq_len, labels=None)
     print(model_summary)
     
     # init metrics dict    
@@ -483,10 +346,14 @@ def train_rnn(
         "device": str(device)
     }
 
+    # for saving model and metrics
+    start_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}" # for saving model
+    model_fp = "output/model_ckpts/"
+    log_dir = "output/model_ckpts/"
+    os.makedirs(model_fp, exist_ok=True)
+
     # train/val loop
     global_step = 0
-    start_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}" # for saving model
-    
     for epoch in range(rnn_config['num_epochs']):
         anneal_factor = compute_anneal_factor(global_step, rnn_config['kl_weight_start'], rnn_config['kl_decay_rate'])
         
@@ -503,36 +370,29 @@ def train_rnn(
         )
 
         rnn.eval()
-        validate(
-            epoch,
-            rnn_config['num_epochs'],
-            val_loader,
-            rnn,
-            anneal_factor,
-            device,
-            metrics
-        )
+        validate(val_loader, rnn, device, metrics)
+
         global_step += len(train_loader)
 
-        # each epoch log metrics, generate plot, log model summary, save model
-        model_fp = "output/model_ckpts/"
-        model_fn = f"DoodleGenRNN_epoch{epoch+1}_{start_time}"
-        os.makedirs(model_fp, exist_ok=True)
-        torch.save({
-            'epoch': epoch + 1,
-            'model_state_dict': rnn.state_dict(),
-            'optimizer_state_dict': optim.state_dict(),
-            'train_loss': metrics['train']['total_loss'][epoch],
-            'val_loss': metrics['val']['total_loss'][epoch],
-            'hyperparams': rnn_params
-        }, model_fp + model_fn + '.pt')
-
-        with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
-            model_summary_file.write(str(model_summary))
-
-        log_dir = "output/model_ckpts/"
+        # basic log and metrics every epoch
         plot_generator_metrics(metrics, start_time, epoch+1, log_dir)
-        log_metrics(metrics, start_time, epoch+1, log_dir)
-    
+        log_metrics(metrics, start_time, log_dir)
 
+        if epoch % 5 == 0:
+            # every 5 epochs save model, generate plot, log model summary, save model
+            model_fn = f"DoodleGenRNN_epoch{epoch+1}_{start_time}"
+            torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': rnn.state_dict(),
+                'optimizer_state_dict': optim.state_dict(),
+                'train_loss': metrics['train']['total_loss'][epoch],
+                'val_loss': metrics['val']['total_loss'][epoch],
+                'hyperparams': rnn_params
+            }, model_fp + model_fn + '.pt')
 
+            with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
+                model_summary_file.write(str(model_summary))
+
+        if epoch % 10 == 0:
+            # distribution metrics every 10 epochs
+            pass

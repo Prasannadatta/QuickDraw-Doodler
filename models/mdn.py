@@ -11,7 +11,7 @@ class MDN:
     def __init__(self, num_modes):
         self.num_modes = num_modes
 
-    def get_mixture_coeff(self, output):
+    def set_mixture_coeff(self, output):
         """
         split decoder output into MDN parameters and process them
 
