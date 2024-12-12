@@ -1,5 +1,5 @@
 {
-    "rnn": {
+    "rnn-old": {
         "in_size": 4,
         "batch_size": 32,
         "num_epochs": 300,
@@ -17,6 +17,71 @@
         "dropout": 0.0,
         "decoder_activations": "leaky_relu"
     },
+
+    "rnn": {
+        "in_size": 6,
+        "num_epochs": 3,
+        "learning_rate": 0.001,
+        "enc_hidden_size": 256,
+        "dec_hidden_size": 128,
+        "attention_size": 0,
+        "latent_size": 64,
+        "num_lstm_layers": 4,
+        "num_mdn_modes": 20,
+        "kl_div_coeff": 1,
+        "dropout": 0.0,
+        "decoder_activations": "leaky_relu",
+
+        "max_seq_len": 250,
+        "enc_model": "lstm",
+        "dec_model": "layer_norm",
+        "enc_rnn_size": 256,
+        "dec_rnn_size": 512,
+        "z_size": 128,
+        "num_mixture": 20,
+        "r_dropout": 0.1,
+        "kl_weight": 0.5,
+        "kl_weight_start": 0.01,
+        "kl_tolerance": 0.2,
+        "kl_decay_rate": 0.99995,
+        "reg_covar": 1e-6,
+        "batch_size": 100,
+        "lr": 0.001,
+        "lr_decay": 0.9999,
+        "min_lr": 0.00001,
+        "grad_clip": 1.0,
+        "data_set": "cat.npz",
+        "random_scale_factor": 0.1,
+        "augment_stroke_prob": 0.08,
+        "num_workers": 4
+    },
+
+    "rnn-new": {
+        "max_seq_len": 250,
+        "enc_model": "lstm",
+        "dec_model": "layer_norm",
+        "num_epochs": 1,
+        "enc_rnn_size": 256,
+        "dec_rnn_size": 512,
+        "z_size": 128,
+        "num_mixture": 20,
+        "r_dropout": 0.1,
+        "kl_weight": 0.5,
+        "kl_weight_start": 0.01,
+        "kl_tolerance": 0.2,
+        "kl_decay_rate": 0.99995,
+        "reg_covar": 1e-6,
+        "batch_size": 100,
+        "lr": 0.001,
+        "lr_decay": 0.9999,
+        "min_lr": 0.00001,
+        "grad_clip": 1.0,
+        "data_set": "cat.npz",
+        "random_scale_factor": 0.1,
+        "augment_stroke_prob": 0.08,
+        "num_workers": 4
+    },
+      
 
     "cnn": {
         "batch_size": 64,
