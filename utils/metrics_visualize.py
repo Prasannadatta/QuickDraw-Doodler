@@ -6,7 +6,7 @@ import numpy as np
 from scipy.stats import wasserstein_distance
 from scipy.special import rel_entr
 
-def compute_jsd_wd(real_data, gen_data, num_bins=200):
+def compute_jsd_wd(real_data, gen_data, num_bins=400):
     # Compute histograms
     hist_range = (min(real_data.min(), gen_data.min()), max(real_data.max(), gen_data.max()))
     hist_real, bin_edges = np.histogram(real_data, bins=num_bins, range=hist_range, density=True)
