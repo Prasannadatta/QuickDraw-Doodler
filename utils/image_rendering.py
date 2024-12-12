@@ -32,7 +32,7 @@ def full_strokes_to_vector_images(sample):
             # pen up or pen end, add point to current stroke and save it
             current_stroke.append([x[i], y[i]])
             simplified_image.append(np.array(current_stroke, dtype=np.float32))
-            current_stroke = []  # Reset current stroke
+            current_stroke = []  # Reset current stroke hi
 
 
     return simplified_image
