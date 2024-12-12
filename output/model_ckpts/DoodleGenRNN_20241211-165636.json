@@ -1,0 +1,59 @@
+{
+    "train": {
+        "total_loss": [
+            -0.7202867646250994
+        ],
+        "kl_div_loss": [
+            0.001035016875433822
+        ],
+        "recon_loss": [
+            -0.721321780535002
+        ],
+        "latent_variance": [
+            1.3799390921304964e-07
+        ],
+        "latent_smoothness": [
+            1.4073375463485718
+        ],
+        "unique_ratio": [
+            1.0
+        ]
+    },
+    "val": {
+        "total_loss": [
+            -1.847712584904262
+        ],
+        "kl_div_loss": [
+            0.00021599499346588606
+        ],
+        "recon_loss": [
+            -1.8479286091668266
+        ],
+        "latent_variance": [
+            9.954159696982932e-15
+        ],
+        "latent_smoothness": [
+            7.532845813784661e-08
+        ],
+        "unique_ratio": [
+            1.0
+        ]
+    },
+    "test": {},
+    "hyperparams": {
+        "in_size": 6,
+        "enc_hidden_size": 256,
+        "dec_hidden_size": 128,
+        "attention_size": 0,
+        "latent_size": 64,
+        "num_lstm_layers": 4,
+        "num_mdn_modes": 20,
+        "dropout": 0.0,
+        "decoder_activations": "leaky_relu",
+        "num_labels": 1,
+        "subset_labels": [
+            "face"
+        ]
+    },
+    "device": "cuda:0"
+}

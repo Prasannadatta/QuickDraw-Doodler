@@ -101,21 +101,20 @@ def vector_to_raster(
 
     return raster_images
 
-def animate_strokes(data, use_actual_time=True, save_gif=False, num_frames=500, gif_fp='sample.gif'):
+def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_frames=500, gif_fp='sample.gif'):
     # Extract columns from data
-    delta_x = data[:, 0]
-    delta_y = data[:, 1]
-    time_deltas = data[:, 2]
+    x = data[:, 0]
+    y = data[:, 1]
+    time = data[:, 2]
     pen_state = data[:, 3]
 
-    # Compute cumulative sums for positions and times
-    x = np.cumsum(delta_x)
-    y = np.cumsum(delta_y)
+    if delta:
+        # Compute cumulative sums for positions and times
+        x = np.cumsum(x)
+        y = np.cumsum(y)
+
     if use_actual_time:
-        time = np.cumsum(time_deltas)
-    else:
-        # Normalize time to have constant intervals
-        time = np.linspace(0, 1, len(delta_x))
+        time = np.cumsum(time)
 
     # Build strokes
     strokes = []

@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from sklearn.model_selection import train_test_split
+from rdp import rdp
+from utils.image_rendering import animate_strokes
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +14,7 @@ class SequentialStrokeData(Dataset):
             self,
             strokes,        # list of np arrs dims (x, y, t, p) x N; (will be transposed to Nx4)
             labels=None,    # array of labels (same length as strokes)
-            max_len=250,    # max sequence len
+            max_len=169,    # max sequence len
             random_scale_factor=0.0,    # amt to randomly scale stokes
             augment_stroke_prob=0.0,    # chance to augment strokes
             limit=1000
@@ -42,16 +44,37 @@ class SequentialStrokeData(Dataset):
         raw_data = []
         seq_len = []
         count_data = 0
-        for stroke in strokes:
-            if stroke.shape[0] == 4: # if 4xN, transpose to Nx4
-                stroke = stroke.T
-            
+
+        # Renamed stroke to stroke_seq for clarity 
+        for stroke_seq in strokes:
+            if stroke_seq.shape[0] == 4: # if 4xN, transpose to Nx4
+                stroke_seq = stroke_seq.T
+
+            # RDP - Ramer-Douglas-Peuker algorithm
+            Ramer_set = []
+
+            split_ind = np.where(stroke_seq[:, 3] == 0)[0]
+
+            split_stroke = np.split(stroke_seq, split_ind + 1) 
+
+            # define epsilon (Test: 2.0, 1.0, .5)
+            epsilon = 1.0
+
+            for stroke in split_stroke:
+                xy_points = stroke[:, :2]
+                mask = rdp(xy_points, epsilon=epsilon, algo='iter', return_mask=True)
+                Ramer_set.append(stroke[mask])
+
+            Ramer_set = np.concatenate(Ramer_set, axis=0)
+
+            # animate_strokes(stroke_seq, delta=False, use_actual_time=False, save_gif=True, num_frames=500, gif_fp= "output/doodle_anims/RDPep=1.0.gif")
+        
             # only take strokes less than hp arg for max length
-            if len(stroke) <= self.max_len:
-                stroke = to_tensor(stroke) # convert stroke np arr to tensor
-                stroke[:,:2].clamp_(-self.limit, self.limit)  # clamp x,y (inplace)
-                raw_data.append(stroke)
-                seq_len.append(len(stroke))
+            if len(Ramer_set) <= self.max_len:
+                Ramer_set = to_tensor(Ramer_set) # convert stroke np arr to tensor
+                Ramer_set[:,:2].clamp_(-self.limit, self.limit)  # clamp x,y (inplace)
+                raw_data.append(Ramer_set)
+                seq_len.append(len(Ramer_set))
                 count_data += 1
 
         sort_idx = np.argsort(seq_len)
@@ -200,6 +223,9 @@ def pad_batch(sequences, max_len):
             # if sequence is longer than max_len, we truncate (rare if carefully chosen max_len)
             l = max_len
         output[i,:l,:] = seq[:l,:]
+        if l < max_len:
+            #set last col to 1
+            output[i, l:, -1] = 1
     return output
 
 class CollateFn:
@@ -219,12 +245,13 @@ def collate_sketches(batch, max_len=250):
     else:
         labels = None
 
-    data = pad_batch(data, max_len)
-    return data, lengths, labels
+    torch.set_printoptions(edgeitems=2)
+    print("Here is the end of a sample before padding: \n", data[-2:])
+    padded_samples = pad_batch(data, max_len)
+    print("Here is the end of a sample after padding: \n", padded_samples[-2:])
+    raise KeyboardInterrupt
 
-    for i in range(padded_samples.shape[0]):  # For each sequence in the batch
-        if torch.all(torch.eq(padded_samples[i],0)): # If the timestep is entirely zeros
-            padded_samples[i] = [0,0,0,0,0,1]  # Replace with the custom padding vector
+    return padded_samples, lengths, labels
 
 def init_sequential_dataloaders(X, y, config):
     """
