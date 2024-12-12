@@ -12,30 +12,33 @@ import os
 import inspect
 
 from models.mdn import MDN
+from models.lstm import RecurDropLayerNormLSTM
 from utils.process_data import init_sequential_dataloaders
 from utils.metrics_visualize import plot_generator_metrics, log_metrics
     
 class DoodleGenRNN(nn.Module):
     def __init__(
             self,
-            in_size,
-            enc_hidden_size,
-            dec_hidden_size,
-            latent_size,
-            num_lstm_layers,
-            num_mdn_modes,
-            dropout,
-            decoder_activations,
+            in_size,                # 6: stroke_6 format (dx, dy, dt, p1, p2, p3)
+            enc_hidden_size,        # encoder size of each layers hidden and cell state vectors
+            dec_hidden_size,        # decoder size of each layers hidden and cell state vectors
+            num_lstm_layers,        # number of layers for the encoder and decoder
+            latent_size,            # size of latent vector z, encoder maps to z, decoder maps from z
+            num_gmm_modes,          # number of modes for the Gaussian Mixture Model
+            recurrent_dropout,      # fraction of recurrent connection nodes to drop to 0
+            dropout,                # fraction of nodes to drop to 0
+            use_layer_norm,         # boolean that will determine which decoder to use along with recurrent_dropout
+            decoder_act,            # activation fn to apply to decoder output
         ):
 
         super(DoodleGenRNN, self).__init__()
         self.apply(init_weights)
-        self.mdn = MDN(num_mdn_modes)
+        self.mdn = MDN(num_gmm_modes)
 
         self.enc_hidden_size = enc_hidden_size
         self.dec_hidden_size = dec_hidden_size
-        self.decoder_activations = decoder_activations
-        self.num_mdn_modes = num_mdn_modes
+        self.decoder_act = decoder_act
+        self.num_gmm_modes = num_gmm_modes
         self.latent_size = latent_size
 
         # encode sequential stroke data with bidirectional LSTM
@@ -53,27 +56,39 @@ class DoodleGenRNN(nn.Module):
         # latent space -> compressed representation of input data to lower dimensional space
         # like convolutions grab most important features, this latent space will learn the same
         # essentially hidden lstm to latent space, but with reparameterizing to sample from gaussian dist of mean and var of hidden
-        self.decoder_to_latent_mu_fc = nn.Linear(enc_hidden_size * 2, latent_size) # * 2 for bidirectionality
-        self.decoder_to_latent_logvar_fc = nn.Linear(enc_hidden_size * 2, latent_size)
+        self.encoder_to_latent_mu_fc = nn.Linear(enc_hidden_size * 2, latent_size) # * 2 for bidirectionality
+        self.encoder_to_latent_logvar_fc = nn.Linear(enc_hidden_size * 2, latent_size)
 
         # decoder LSTM
         self.latent_to_decoder_h_fc = nn.Linear(latent_size, dec_hidden_size)
         self.latent_to_decoder_c_fc = nn.Linear(latent_size, dec_hidden_size)
-        self.lstm_decoder = nn.LSTM(
-            input_size=in_size,
-            hidden_size=dec_hidden_size,
-            num_layers=num_lstm_layers,
-            dropout=dropout,
-            batch_first=True,
-            bidirectional=False # not bidirectional to produce sequentially
-        )
+        if use_layer_norm or recurrent_dropout > 0.:
+            # jit script allows torch to compile the model and run it much more efficiently
+            self.lstm_decoder = torch.jit.script(
+                RecurDropLayerNormLSTM(
+                    input_size=in_size,
+                    hidden_size=dec_hidden_size,
+                    num_layers=num_lstm_layers,
+                    batch_first=True,
+                    recurrent_dropout=recurrent_dropout,
+                    use_layer_norm=use_layer_norm
+                )
+            )
+        else:
+            self.lstm_decoder = nn.LSTM(
+                input_size=in_size,
+                hidden_size=dec_hidden_size,
+                num_layers=num_lstm_layers,
+                batch_first=True,
+                dropout=dropout
+            )
 
         # different input sizes for with and without attention mechanisms
         # output size is for Gaussian mixture density components
         #  -> 8 gaussian params (mu_dx, mu_dy, mu_dt, sigma_dx, sigma_dy. sigma_dt, rho (correlation), pi, (mixing coefficient))
-        # num_mdn_modes -> how many modes the Mixture Density Network will predict (default 20)
+        # num_gmm_modes -> how many modes the Mixture Density Network will predict (default 20)
         # +3 -> pen states 0, 1, 2
-        self.decoder_to_gmm_fc = nn.Linear(dec_hidden_size, (8 * num_mdn_modes) + 3)
+        self.decoder_to_gmm_fc = nn.Linear(dec_hidden_size, (8 * num_gmm_modes) + 3)
 
 
     def encode(self, x, lengths):
@@ -92,8 +107,8 @@ class DoodleGenRNN(nn.Module):
 
         # mu and logvar aren't the actual mean and log of variance of hidden state,
         # rather they're learned params we will use as the "mean" and log of "variance" to sample z from
-        mu = self.decoder_to_latent_mu_fc(hn) # mean of latent vec (z)
-        logvar = self.decoder_to_latent_logvar_fc(hn) # log of variance of latent vec, use log for numerical stability
+        mu = self.encoder_to_latent_mu_fc(hn) # mean of latent vec (z)
+        logvar = self.encoder_to_latent_logvar_fc(hn) # log of variance of latent vec, use log for numerical stability
 
         return mu, logvar
 
@@ -130,8 +145,8 @@ class DoodleGenRNN(nn.Module):
         c0 = self.latent_to_decoder_c_fc(z).unsqueeze(0)
         
         # apply appropriate activation to hidden state
-        if self.decoder_activations.lower() != 'none':
-            activation = getattr(F, self.decoder_activations.lower())
+        if self.decoder_act.lower() != 'none':
+            activation = getattr(F, self.decoder_act.lower())
             h0 = activation(h0)
             c0 = activation(c0)
 
@@ -178,10 +193,12 @@ def init_weights(model):
             elif 'bias' in name: # bias init 0
                 nn.init.constant_(param.data, 0.)
 
-def compute_anneal_factor(step, kl_weight_start, kl_decay_rate):
-    return 1 - (1 - kl_weight_start) * (kl_decay_rate ** step)
+def compute_anneal_factor(step, kl_weight_start, kl_decay_rate, kl_weight=1.0):
+    '''returns the anneal factor including the kl_weight from model params'''
+    anneal = 1 - (1 - kl_weight_start) * (kl_decay_rate ** step)
+    return anneal * kl_weight
 
-def kl_divergence_loss(mu, logvar, anneal_factor):
+def kl_divergence_loss(mu, logvar, anneal_factor, tol=0.25):
     """
     Calculate KL divergence loss with annealing.
     Args:
@@ -192,6 +209,7 @@ def kl_divergence_loss(mu, logvar, anneal_factor):
         L_KL: Scalar KL divergence loss.
     """
     kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    kl = torch.clamp(kl, min=tol)
     return anneal_factor * kl / mu.size(0)
 
 
@@ -203,6 +221,8 @@ def train(
         optim,
         scheduler,
         anneal_factor,
+        kl_tolerance,
+        reg_covar, 
         device,
         metrics
 ):
@@ -230,9 +250,9 @@ def train(
 
         # Reconstruction loss using MDN
         rnn.mdn.set_mixture_coeff(gmm_outputs) # Mixture coefficients for GMM
-        rec_loss = rnn.mdn.reconstruction_loss(decoder_target, mask)
+        rec_loss = rnn.mdn.reconstruction_loss(decoder_target, mask, reg_covar)
 
-        kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor) # KL divergence loss
+        kl_div_loss = kl_divergence_loss(mu, logvar, anneal_factor, kl_tolerance) # KL divergence loss
 
         loss = rec_loss + kl_div_loss # total loss
 
@@ -355,7 +375,12 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
     # train/val loop
     global_step = 0
     for epoch in range(rnn_config['num_epochs']):
-        anneal_factor = compute_anneal_factor(global_step, rnn_config['kl_weight_start'], rnn_config['kl_decay_rate'])
+        weighted_anneal_factor = compute_anneal_factor(
+            global_step,
+            rnn_config['kl_weight_start'],
+            rnn_config['kl_decay_rate'],
+            kl_weight=rnn_config['kl_weight']
+        )
         
         train(
             epoch,
@@ -364,7 +389,9 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
             rnn,
             optim,
             scheduler,
-            anneal_factor,
+            weighted_anneal_factor,
+            rnn_config['kl_tolerance'],
+            rnn_config['reg_covar'],
             device,
             metrics
         )

@@ -1,0 +1,44 @@
+Brandon:
+- Setup all code and file structure
+- enums and cli arguments and handling for params and function calling
+- utils/get_data.py script
+    - download simplified data (just final doodle image not the strokes)
+    - download raw pen stroke data
+    - stack pen strokes to one long sequence with pen state value
+- utils/image_rendering.py
+    - rasterize stroke/image data to display doodles
+    - animate the doodle strokes to visualize the path of doodles with temporal dependence
+- utils/process_data.py -> SequentialStrokeData class
+    - preprocess data -> stroke-6 format
+        - misc small processing -> clamping/filtering/transposing etc.
+        - z-score normalize sequences with global stats
+        - onehot pen states and add SOS and EOS tokens
+        - random scale and augment of sequences
+        - sequence padding
+- models/vae.py -> DoodleGenRNN class in its entirety. (file formerly rnn.py, rnnv1 and rnnv2 are old deprecated attempts of mine)
+    - parent function to initialize all the above
+    - train/val loops for vae
+        - Kullback-Leibler divergence loss (with annealing)
+        - reconstruction loss (more details in section models/mdn.py)
+    - setup all layers of VAE
+        - x -> LSTM encoder -> encoder to latent fc -> latent to decoder fc -> lstm decoder -> decoder to gmm params fc
+    - VAE methods: encode, reparameterize, decode, forward, and latent space conditional sampling
+    - weight initialization for all VAE layers
+    - all VAE metrics logging/visualization code (utils/metrics_visualize.py)
+- models/mdn.py -> MDN class intialized in DoodleGenRNN to sample from the Gaussian Mixture Model parameters that the VAE outputs
+    - reconstruction loss methods
+        - split gmm coefficients from VAE output and apply tikhonov regularization
+        - sample from bivariate dist from gmm params for dx and dy
+        - sample from univariate dist from gmm params for dt
+        - CCE loss for pen state one hot
+        - combine them all for reconstruction loss
+- models/lstm.py -> custom LSTM class for encoder/decoder
+    - torch lstm does not have methods for recurrent dropout or layer normalization
+    - custom lstm similar to torch implementation but adding those features
+    - compiled with torch jit script for efficiency
+- generate.py -> receive args from main and generate a sample conditioned on the latent vector
+
+Robin:
+
+
+Pras:
