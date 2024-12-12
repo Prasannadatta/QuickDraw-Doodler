@@ -1,6 +1,21 @@
 import torch
 import torch.nn.functional as F
 
+def bivariate_tikhonov_regularizer(scales, corrs, alpha):
+    """
+    Tikhonov regularization (helps stabilize training and ensures cov mat is invertible):
+    Adds a small non-negative constant to the diagonal of the covariance matrix 
+    for a bivariate distribution.
+    alpha -> 'reg_covar' param in 'model_params.json' determines strength of regularization
+    """
+    # regularize std devs of the bivariate dist
+    reg_scales = torch.sqrt(scales**2 + alpha) # (batch_size, 2)
+    
+    # update correlation coefficients to account for std devs change
+    reg_corrs = corrs * torch.prod(scales, -1) / torch.prod(reg_scales, -1) # (batch_size,)
+    
+    return reg_scales, reg_corrs
+
 class MDN:
     """
     Mixture Density Network to model output mixture coefficients from DoodleGen Decoder
@@ -11,37 +26,37 @@ class MDN:
     def __init__(self, num_modes):
         self.num_modes = num_modes
 
-    def get_mixture_coeff(self, output):
+    def set_mixture_coeff(self, output):
         """
         split decoder output into MDN parameters and process them
 
         Args:
             output: Tensor of shape (batch_size, seq_len, output_dim), decoder outputs.
-                output_dim = (6 * num_mdn_modes) + 3
-            num_mdn_modes: int, number of mixture components (M).
+                output_dim = (6 * num_gmm_modes) + 3
+            num_gmm_modes: int, number of mixture components (M).
 
         Returns:
-            - z_pi: Tensor of shape (batch_size, seq_len, num_mdn_modes), mixture weights.
-            - z_mu1, z_mu2: Tensors of shape (batch_size, seq_len, num_mdn_modes), Gaussian means for x1, x2.
-            - z_sigma1, z_sigma2: Tensors of shape (batch_size, seq_len, num_mdn_modes), Gaussian standard deviations for x1, x2.
-            - z_corr: Tensor of shape (batch_size, seq_len, num_mdn_modes), correlations in [-1, 1].
+            - z_pi: Tensor of shape (batch_size, seq_len, num_gmm_modes), mixture weights.
+            - z_mu1, z_mu2: Tensors of shape (batch_size, seq_len, num_gmm_modes), Gaussian means for x1, x2.
+            - z_sigma1, z_sigma2: Tensors of shape (batch_size, seq_len, num_gmm_modes), Gaussian standard deviations for x1, x2.
+            - z_corr: Tensor of shape (batch_size, seq_len, num_gmm_modes), correlations in [-1, 1].
             - z_pen_probs: Tensor of shape (batch_size, seq_len, 3), pen state probabilities.
             - z_pen_logits: Tensor of shape (batch_size, seq_len, 3), raw logits for pen states.
         """
-        num_mdn_modes = self.num_modes
+        num_gmm_modes = self.num_modes
         
         # Split output
         # (...) notation means grab the last indexed item from all outer dimensions
         # so line below will grab all the z_pis from all sequence lengths and all items in batch
-        self.z_pi = output[..., :num_mdn_modes]  # Mixture weights
-        self.z_mu_dx = output[..., num_mdn_modes:2*num_mdn_modes]
-        self.z_mu_dy = output[..., 2*num_mdn_modes:3*num_mdn_modes]
-        self.z_mu_dt = output[..., 3*num_mdn_modes:4*num_mdn_modes]
-        self.z_sigma_dx = output[..., 4*num_mdn_modes:5*num_mdn_modes]
-        self.z_sigma_dy = output[..., 5*num_mdn_modes:6*num_mdn_modes]
-        self.z_sigma_dt = output[..., 6*num_mdn_modes:7*num_mdn_modes]
-        self.z_corr = output[..., 7*num_mdn_modes:8*num_mdn_modes]
-        self.z_pen_logits = output[..., 8*num_mdn_modes:8*num_mdn_modes+3]
+        self.z_pi = output[..., :num_gmm_modes]  # Mixture weights
+        self.z_mu_dx = output[..., num_gmm_modes:2*num_gmm_modes]
+        self.z_mu_dy = output[..., 2*num_gmm_modes:3*num_gmm_modes]
+        self.z_mu_dt = output[..., 3*num_gmm_modes:4*num_gmm_modes]
+        self.z_sigma_dx = output[..., 4*num_gmm_modes:5*num_gmm_modes]
+        self.z_sigma_dy = output[..., 5*num_gmm_modes:6*num_gmm_modes]
+        self.z_sigma_dt = output[..., 6*num_gmm_modes:7*num_gmm_modes]
+        self.z_corr = output[..., 7*num_gmm_modes:8*num_gmm_modes]
+        self.z_pen_logits = output[..., 8*num_gmm_modes:8*num_gmm_modes+3]
 
         # Process parameters
         self.z_pi = F.softmax(self.z_pi, dim=-1)  # Softmax for mixture weights
@@ -53,7 +68,7 @@ class MDN:
 
     def _univariate_normal(self, x):
         # x: (batch_size, seq_len)
-        # mu, sigma: (batch_size, seq_len, num_mdn_modes)
+        # mu, sigma: (batch_size, seq_len, num_gmm_modes)
         x = x.unsqueeze(-1)  # Expand to match mixture components
         prob = (1 / (self.z_sigma_dt * torch.sqrt(torch.tensor(2 * torch.pi)))) * torch.exp(-0.5 * ((x - self.z_mu_dt) / self.z_sigma_dt) ** 2)
         #print("pt_1d_normal prob min:", prob.min().item(), "max:", prob.max().item())
@@ -84,17 +99,17 @@ class MDN:
         #print("pt_2d_normal prob min:", prob.min().item(), "max:", prob.max().item())
         return prob
 
-    def reconstruction_loss(self, target, mask):
+    def reconstruction_loss(self, target, mask, reg_covar=0):
         """
         Compute the reconstruction loss for Sketch-RNN.
 
         Args:
             target: Tensor of shape (batch_size, seq_len, 5), ground truth strokes:
                 [x1, x2, pen_lift, pen_down, pen_end].
-            z_pi: Tensor of shape (batch_size, seq_len, num_mdn_modes), mixture weights.
-            z_mu1, z_mu2: Tensors of shape (batch_size, seq_len, num_mdn_modes), Gaussian means for x1, x2.
-            z_sigma1, z_sigma2: Tensors of shape (batch_size, seq_len, num_mdn_modes), Gaussian standard deviations.
-            z_corr: Tensor of shape (batch_size, seq_len, num_mdn_modes), correlations in [-1, 1].
+            z_pi: Tensor of shape (batch_size, seq_len, num_gmm_modes), mixture weights.
+            z_mu1, z_mu2: Tensors of shape (batch_size, seq_len, num_gmm_modes), Gaussian means for x1, x2.
+            z_sigma1, z_sigma2: Tensors of shape (batch_size, seq_len, num_gmm_modes), Gaussian standard deviations.
+            z_corr: Tensor of shape (batch_size, seq_len, num_gmm_modes), correlations in [-1, 1].
             z_pen_logits: Tensor of shape (batch_size, seq_len, 3), raw logits for pen states.
             mask: Tensor of shape (batch_size, seq_len), binary mask for valid timesteps.
 
@@ -102,13 +117,13 @@ class MDN:
             Tensor: Scalar tensor representing the mean reconstruction loss.
         """
         dx, dy, dt, pen_state = target[..., 0], target[..., 1], target[..., 2], target[..., 3].long()  # Split target
-        '''
-        print("dx shape:", dx.shape, "min:", dx.min().item(), "max:", dx.max().item())
-        print("dy shape:", dy.shape, "min:", dy.min().item(), "max:", dy.max().item())
-        print("dt shape:", dt.shape, "min:", dt.min().item(), "max:", dt.max().item())
-        print("pen_state shape:", pen_state.shape, "unique values:", pen_state.unique())
-        print("Mask shape:", mask.shape, "unique values:", mask.unique())
-        '''
+
+        # tikhonov regularization for bivariate distributions
+        if reg_covar > 0.:
+            # combine scales
+            scales = torch.stack([self.z_sigma_dx, self.z_sigma_dy], dim=-1) 
+            reg_scales, self.z_corr = bivariate_tikhonov_regularizer(scales, self.z_corr, reg_covar)
+            self.z_sigma_dx, self.z_sigma_dy = reg_scales[..., 0], reg_scales[..., 1]  # unpack scales back into stddevs
 
         # bivariate distribution probabilities for dx and dy
         spatial_prob = self._bivariate_normal(dx, dy)
@@ -132,15 +147,27 @@ class MDN:
         # Total reconstruction loss
         return (L_s.sum() + L_p.sum()) / mask.sum()
 
-    def sample_mdn(self, t):
+    def sample(self):
         # sample pen state distribution
-        pen_state = torch.multinomial(self.z_pen[0, t], 1).item()
+        # self.z_pen shape: (1,1,3) holds probabilities of selecting each pen state
+        pen_probs = self.z_pen[0]
+        #print("pen_probs:", pen_probs)
+        #print("Sum of pen_probs:", torch.sum(pen_probs).item())
+        # multinomial will choose pen state with probabilities dictated in pen_probs
+        pen_state = torch.multinomial(pen_probs, 1).item()
+        
+        # onehot pen state
+        pen_onehot = [0,0,0]
+        pen_onehot[pen_state] = 1
 
-        # sample dx, dy, dt
-        mode_idx = torch.multinomial(self.z_pi[0, t], 1).item()
+        # sample mixture component z_pi
+        pi = self.z_pi[0]
+        mode_idx = torch.multinomial(pi, 1).item()
 
-        dx = torch.normal(self.z_mu_dx[0, t, mode_idx], self.z_sigma_dx[0, t, mode_idx]).item()
-        dy = torch.normal(self.z_mu_dy[0, t, mode_idx], self.z_sigma_dy[0, t, mode_idx]).item()
-        dt = torch.normal(self.z_mu_dt[0, t, mode_idx], self.z_sigma_dt[0, t, mode_idx]).item()
-
-        return dx, dy, dt, pen_state
+        # sample dx, dy, dt from chosen mixture component
+        dx = torch.normal(self.z_mu_dx[0, mode_idx], self.z_sigma_dx[0, mode_idx]).item()
+        dy = torch.normal(self.z_mu_dy[0, mode_idx], self.z_sigma_dy[0, mode_idx]).item()
+        dt = torch.normal(self.z_mu_dt[0, mode_idx], self.z_sigma_dt[0, mode_idx]).item()
+        sample = torch.tensor([dx, dy, dt] + pen_onehot)
+        #print(sample)
+        return sample

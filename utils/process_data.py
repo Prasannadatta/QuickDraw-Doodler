@@ -150,6 +150,15 @@ class SequentialStrokeData(Dataset):
         # Return (data, length, label) similar to what you'd do for a collate_fn
         return (stroke_6, length, label)
 
+def get_max_seq_len(sequences):
+    max_len = -1
+    for seq in sequences:
+        cur_seq_len = len(seq)
+        if len(seq) > max_len:
+            max_len = cur_seq_len
+
+    return max_len
+
 def to_tensor(x):
     if isinstance(x, torch.Tensor):
         return x.float()
@@ -294,6 +303,29 @@ def init_sequential_dataloaders(X, y, config):
     test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate, num_workers=4)
 
     return train_loader, val_loader, test_loader
+
+def get_real_samples_from_dataloader(loader, max_samples=2000):
+    real_x, real_y, real_t = [], [], []
+    count = 0
+    for batch in loader:
+        Xbatch, seq_lens, _ = batch
+        # Xbatch (B, L, 6) = [dx, dy, dt, p1, p2, p3]
+        # Flatten and extract dx, dy
+        dx = Xbatch[..., 0].numpy().flatten()
+        dy = Xbatch[..., 1].numpy().flatten()
+        dt = Xbatch[..., 2].numpy().flatten()
+        
+        real_x.append(dx)
+        real_y.append(dy)
+        real_t.append(dt)
+        count += len(dx)
+        if count >= max_samples:
+            break
+    
+    real_x = np.concatenate(real_x)[:max_samples]
+    real_y = np.concatenate(real_y)[:max_samples]
+    real_t = np.concatenate(real_t)[:max_samples]
+    return real_x, real_y, real_t
 
 def local_normalize_stroke_data(data):
     '''

@@ -3,7 +3,7 @@ import os
 
 from torch.optim import Adam
 
-from models.rnn import DoodleGenRNN
+from models.vae import DoodleGenRNN
 from utils.enum_types import ModelType
 from utils.process_data import local_normalize_stroke_data, test_display_img
 from utils.image_rendering import vector_to_raster, full_strokes_to_vector_images, animate_strokes
