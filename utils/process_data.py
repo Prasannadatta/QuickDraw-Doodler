@@ -42,6 +42,10 @@ def sequential_collate_fn(batch):
     # batch dimension remains at front (b, max_seq_len, points)
     padded_samples = pad_sequence(samples, batch_first=True)
 
+    for i in range(padded_samples.shape[0]):  # For each sequence in the batch
+        if torch.all(torch.eq(padded_samples[i],0)): # If the timestep is entirely zeros
+            padded_samples[i] = [0,0,0,0,0,1]  # Replace with the custom padding vector
+
     return padded_samples, lengths, labels
 
 def init_sequential_dataloaders(X, y, batch_size):
