@@ -58,6 +58,7 @@ class SequentialStrokeData(Dataset):
             split_stroke = np.split(stroke_seq, split_ind + 1) 
 
             # define epsilon (Test: 2.0, 1.0, .5)
+            # Test conclusive: epsilon of 1.0 cuts data substantially while maintaining clear lines
             epsilon = 1.0
 
             for stroke in split_stroke:
