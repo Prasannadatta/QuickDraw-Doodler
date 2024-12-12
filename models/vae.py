@@ -10,11 +10,13 @@ from collections import defaultdict
 from datetime import datetime
 import os
 import inspect
+import numpy as np
+import matplotlib.pyplot as plt
 
 from models.mdn import MDN
 from models.lstm import RecurDropLayerNormLSTM
-from utils.process_data import init_sequential_dataloaders
-from utils.metrics_visualize import plot_generator_metrics, log_metrics
+from utils.process_data import init_sequential_dataloaders, get_real_samples_from_dataloader
+from utils.metrics_visualize import plot_generator_metrics, log_metrics, distribution_comparison
     
 class DoodleGenRNN(nn.Module):
     def __init__(
@@ -167,6 +169,52 @@ class DoodleGenRNN(nn.Module):
         decoder_output, _ = self.lstm_decoder(inputs, hidden)
 
         return decoder_output
+
+    def sample_sketch(self, seq_len, z=None):
+        self.eval()  # Set the model to evaluation mode
+        device = next(self.parameters()).device
+
+        if z is None:
+            # sample from gaussian normal distribution latent vector
+            z = torch.randn((1, self.latent_size), device=device)
+
+        # Initialize hidden state for the decoder (same as beginning of decode method)
+        h0 = self.latent_to_decoder_h_fc(z).unsqueeze(0)
+        c0 = self.latent_to_decoder_c_fc(z).unsqueeze(0)
+        if self.decoder_act.lower() != 'none':
+            activation = getattr(F, self.decoder_act.lower())
+            h0 = activation(h0)
+            c0 = activation(c0)
+        h0 = h0.repeat(self.lstm_decoder.num_layers, 1, 1)
+        c0 = c0.repeat(self.lstm_decoder.num_layers, 1, 1)
+        hidden = (h0, c0)
+
+        # Start the sketch with a zero vector (SOS input token)
+        input_size = self.lstm_decoder.input_size
+        input_t = torch.zeros((1, 1, input_size), device=z.device)
+        
+        sketch = []
+        for _ in range(seq_len):
+            # Forward pass through the decoder
+            output, hidden = self.lstm_decoder(input_t, hidden)
+            gmm_params = self.decoder_to_gmm_fc(output.squeeze(1)) # (1, (8*m)+3)
+
+            # sample from GMM
+            self.mdn.set_mixture_coeff(gmm_params)
+            sampled_point = self.mdn.sample() # 1D tensor (dx, dy, dt, p1, p2, p3)
+            sketch.append(sampled_point.unsqueeze(0))
+
+            # prepare the next input as step we just sampled
+            input_t = sampled_point.unsqueeze(0).unsqueeze(0).to(device) # (1, 1, 6)
+
+            # break early if EOS token reached
+            pen_state_idx = torch.argmax(sampled_point[3:]).item()
+            if pen_state_idx == 2:
+                break
+
+        sketch = torch.cat(sketch, dim=0) # (L, 6)
+        #print(sketch, sketch.size())
+        return sketch
 
     def forward(self, x, seq_len, labels=None, inputs=None):
         mu, logvar = self.encode(x, seq_len) # encode input sequence
@@ -353,6 +401,8 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
 
     model_summary = summary(rnn, input_size=temp_sample_shape, col_names=["input_size", "output_size", "num_params", "trainable"], verbose=0, seq_len=temp_seq_len, labels=None)
     print(model_summary)
+    param_count = sum(p.numel() for p in rnn.parameters())
+    print(f"Torch.jit.script makes model summary incorrectly count params\nACTUAL NUM PARAMETERS: {param_count}")
     
     # init metrics dict    
     train_metrics = defaultdict(list)
@@ -365,6 +415,8 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
         'hyperparams': rnn_params,
         "device": str(device)
     }
+
+    dist_metrics = {}
 
     # for saving model and metrics
     start_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}" # for saving model
@@ -403,11 +455,11 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
 
         # basic log and metrics every epoch
         plot_generator_metrics(metrics, start_time, epoch+1, log_dir)
-        log_metrics(metrics, start_time, log_dir)
+        log_metrics(metrics, f"DoodleGenRNN-losses-{start_time}.json", log_dir)
 
         if epoch % 5 == 0:
             # every 5 epochs save model, generate plot, log model summary, save model
-            model_fn = f"DoodleGenRNN_epoch{epoch+1}_{start_time}"
+            model_fn = f"DoodleGenRNN-epoch{epoch+1}-{start_time}"
             torch.save({
                 'epoch': epoch + 1,
                 'model_state_dict': rnn.state_dict(),
@@ -422,4 +474,40 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
 
         if epoch % 10 == 0:
             # distribution metrics every 10 epochs
-            pass
+            print("Analyzing real and generated data distributions...")
+            
+            seq_pt_count = 0
+            max_seq_points = 5000
+            gen_x, gen_y, gen_t = [], [], []
+            while seq_pt_count < max_seq_points:
+                gen_sketch = rnn.sample_sketch(rnn_config['max_seq_len'])
+                seq_pt_count += gen_sketch.size(0)
+                gen_dx = gen_sketch[:, 0].numpy().flatten()
+                gen_dy = gen_sketch[:, 1].numpy().flatten()
+                gen_dt = gen_sketch[:, 2].numpy().flatten()
+                gen_x.append(gen_dx)
+                gen_y.append(gen_dy)
+                gen_t.append(gen_dt)
+            gen_x = np.concatenate(gen_x)[:max_seq_points]
+            gen_y = np.concatenate(gen_y)[:max_seq_points]
+            gen_t = np.concatenate(gen_t)[:max_seq_points]
+
+            real_x, real_y, real_t = get_real_samples_from_dataloader(val_loader, max_samples=max_seq_points)
+            print(gen_x, '\n', real_x, '\n\n')
+            print(gen_x.shape, real_x.shape)
+            
+            # init new figure for current iteration
+            fig, ax = plt.subplots(3,1, figsize=(16, 12))
+            fig.suptitle("Generator Metrics Over Epochs", fontsize=16)
+            jsds, wds = [], []
+            for i, (real_data, gen_data, data_var) in enumerate([(real_x, gen_x, 'dx'), (real_y, gen_y, 'dy'), (real_t, gen_t, 'dt')]):
+                fig, ax, jsd, wd = distribution_comparison(fig, ax, i, real_data, gen_data, data_var, epoch+1, log_dir)
+                jsds.append(jsd)
+                wds.append(wd)
+            fname = f"{log_dir}/DoodleGenRNN-distributions-epoch{epoch+1}-{start_time}.png"
+            fig.savefig(fname, dpi=300) 
+            dist_metrics[f"JSD-xyt-epoch-{epoch+1}"] = jsd
+            dist_metrics[f"WD-xyt-epoch-{epoch+1}"] = wd
+            log_metrics(dist_metrics, f"DoodleGenRNN-distributions-epoch{epoch+1}-{start_time}", log_dir)
+            plt.close(fig)
+            print("Done! Next epoch starting...")

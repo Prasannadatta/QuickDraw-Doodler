@@ -147,15 +147,27 @@ class MDN:
         # Total reconstruction loss
         return (L_s.sum() + L_p.sum()) / mask.sum()
 
-    def sample_mdn(self, t):
+    def sample(self):
         # sample pen state distribution
-        pen_state = torch.multinomial(self.z_pen[0, t], 1).item()
+        # self.z_pen shape: (1,1,3) holds probabilities of selecting each pen state
+        pen_probs = self.z_pen[0]
+        #print("pen_probs:", pen_probs)
+        #print("Sum of pen_probs:", torch.sum(pen_probs).item())
+        # multinomial will choose pen state with probabilities dictated in pen_probs
+        pen_state = torch.multinomial(pen_probs, 1).item()
+        
+        # onehot pen state
+        pen_onehot = [0,0,0]
+        pen_onehot[pen_state] = 1
 
-        # sample dx, dy, dt
-        mode_idx = torch.multinomial(self.z_pi[0, t], 1).item()
+        # sample mixture component z_pi
+        pi = self.z_pi[0]
+        mode_idx = torch.multinomial(pi, 1).item()
 
-        dx = torch.normal(self.z_mu_dx[0, t, mode_idx], self.z_sigma_dx[0, t, mode_idx]).item()
-        dy = torch.normal(self.z_mu_dy[0, t, mode_idx], self.z_sigma_dy[0, t, mode_idx]).item()
-        dt = torch.normal(self.z_mu_dt[0, t, mode_idx], self.z_sigma_dt[0, t, mode_idx]).item()
-
-        return dx, dy, dt, pen_state
+        # sample dx, dy, dt from chosen mixture component
+        dx = torch.normal(self.z_mu_dx[0, mode_idx], self.z_sigma_dx[0, mode_idx]).item()
+        dy = torch.normal(self.z_mu_dy[0, mode_idx], self.z_sigma_dy[0, mode_idx]).item()
+        dt = torch.normal(self.z_mu_dt[0, mode_idx], self.z_sigma_dt[0, mode_idx]).item()
+        sample = torch.tensor([dx, dy, dt] + pen_onehot)
+        #print(sample)
+        return sample

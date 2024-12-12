@@ -272,6 +272,29 @@ def init_sequential_dataloaders(X, y, config):
 
     return train_loader, val_loader, test_loader
 
+def get_real_samples_from_dataloader(loader, max_samples=2000):
+    real_x, real_y, real_t = [], [], []
+    count = 0
+    for batch in loader:
+        Xbatch, seq_lens, _ = batch
+        # Xbatch (B, L, 6) = [dx, dy, dt, p1, p2, p3]
+        # Flatten and extract dx, dy
+        dx = Xbatch[..., 0].numpy().flatten()
+        dy = Xbatch[..., 1].numpy().flatten()
+        dt = Xbatch[..., 2].numpy().flatten()
+        
+        real_x.append(dx)
+        real_y.append(dy)
+        real_t.append(dt)
+        count += len(dx)
+        if count >= max_samples:
+            break
+    
+    real_x = np.concatenate(real_x)[:max_samples]
+    real_y = np.concatenate(real_y)[:max_samples]
+    real_t = np.concatenate(real_t)[:max_samples]
+    return real_x, real_y, real_t
+
 def local_normalize_stroke_data(data):
     '''
     Old method of normalizing pen stroke data, normalized within samples instead of globally

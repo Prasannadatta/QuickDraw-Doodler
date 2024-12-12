@@ -92,7 +92,7 @@ class RecurDropLayerNormLSTM(nn.Module):
     def forward(
             self,
             x: torch.Tensor,
-            hidden: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]=None
+            hidden: List[Tuple[torch.Tensor, torch.Tensor]]
         ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
         '''Using type enforcement for torch.jit.script to work'''
 

@@ -25,6 +25,7 @@ Brandon:
     - VAE methods: encode, reparameterize, decode, forward, and latent space conditional sampling
     - weight initialization for all VAE layers
     - all VAE metrics logging/visualization code (utils/metrics_visualize.py)
+    - approximation and plotting of real and gen data distributions (wasserstein distance and normalized JSD)
 - models/mdn.py -> MDN class intialized in DoodleGenRNN to sample from the Gaussian Mixture Model parameters that the VAE outputs
     - reconstruction loss methods
         - split gmm coefficients from VAE output and apply tikhonov regularization

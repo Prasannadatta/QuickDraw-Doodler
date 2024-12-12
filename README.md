@@ -28,7 +28,7 @@ These gifs are both from the same dataset (not generated). Here you can see how 
 
 **4**: Model checkpoints are in the gitignore, but our chosen 'best' models are in the `trained_models/` directory. Models in this folder should be chosen when generating sequences or classifying sketches.
 
-**5**: In the parameters below, specifying true for use layer norm and any value above 0 for recurrent dropout will use the custom implementation of an LSTM since the standard pytorch one does not include those. It is a good bit slower. Regular dropout hypeparameter will go into the standard pytorch LSTM, where it is applied between layers. This is only useful if num_lstm_layers > 1
+**5**: In the parameters below, specifying true for use layer norm and any value above 0 for recurrent dropout will use the custom implementation of an LSTM since the standard pytorch one does not include those. It is a good bit slower despite compiling with torch.jit.script(). Regular dropout hypeparameter will go into the standard pytorch LSTM, where it is applied between layers. This is only useful if num_lstm_layers > 1. 
 
 
 ## Package installation
@@ -196,5 +196,5 @@ rnn params are as follows:
     - it wasn't, it was just in the vae not in the mdn
 - [x] add correct recurrent dropout
 - [x] layer norm - decoder?
-- [ ] check model_params.json alignment with vae args
-- [ ] sample from the model
+- [x] check model_params.json alignment with vae args
+- [x] sample from the model
