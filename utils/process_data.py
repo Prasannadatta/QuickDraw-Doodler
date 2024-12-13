@@ -36,14 +36,14 @@ class SequentialStrokeData(Dataset):
             print("Preprocessing data...")
             self.strokes, self.sort_idx = self.preprocess(strokes) # list of np arrs dims N x (x, y, t, p)
 
-        if labels is not None:
-            self.labels = torch.tensor(labels, dtype=torch.long)[self.sort_idx]
-        else:
-            self.labels = None
+            if labels is not None:
+                self.labels = torch.tensor(labels, dtype=torch.long)[self.sort_idx]
+            else:
+                self.labels = None
             
-        # Compute global normalization stats (x,y,t)
-        print("Computing normalization stats...")
-        self.x_mean, self.x_std, self.y_mean, self.y_std, self.t_mean, self.t_std, self.dx_mean, self.dx_std, self.dy_mean, self.dy_std, self.dt_mean, self.dt_std = self.calculate_global_stats()
+            # Compute global normalization stats (x,y,t)
+            print("Computing normalization stats...")
+            self.dx_mean, self.dx_std, self.dy_mean, self.dy_std, self.dt_mean, self.dt_std = self.calculate_global_stats()
 
     def preprocess(self, strokes):
         """
@@ -98,10 +98,6 @@ class SequentialStrokeData(Dataset):
         y = all_data[:,1]
         t = all_data[:,2]
 
-        x_mean, x_std = x.mean(), x.std()
-        y_mean, y_std = y.mean(), y.std()
-        t_mean, t_std = t.mean(), t.std()
-
         # Calculate deltas (differences between consecutive points)
         dx = torch.cat([x[:1], x[1:] - x[:-1]])  # Append first element to match size
         dy = torch.cat([y[:1], y[1:] - y[:-1]])  # Append first element to match size
@@ -112,9 +108,8 @@ class SequentialStrokeData(Dataset):
         dy_mean, dy_std = dy.mean(), dy.std()
         dt_mean, dt_std = dt.mean(), dt.std()
 
-        print(x_mean, x_std, y_mean, y_std, t_mean, t_std)
 
-        return x_mean, x_std, y_mean, y_std, t_mean, t_std, dx_mean, dx_std, dy_mean, dy_std, dt_mean, dt_std
+        return dx_mean, dx_std, dy_mean, dy_std, dt_mean, dt_std
 
     def save_preprocessed(self, filepath):
         """
@@ -132,12 +127,12 @@ class SequentialStrokeData(Dataset):
                 'strokes': self.strokes,
                 'sort_idx': self.sort_idx,
                 'labels': self.labels,
-                'x_mean': self.x_mean,
-                'x_std': self.x_std,
-                'y_mean': self.y_mean,
-                'y_std': self.y_std,
-                't_mean': self.t_mean,
-                't_std': self.t_std
+                'dx_mean': self.dx_mean,
+                'dx_std': self.dx_std,
+                'dy_mean': self.dy_mean,
+                'dy_std': self.dy_std,
+                'dt_mean': self.dt_mean,
+                'dt_std': self.dt_std
             }
         }
         torch.save(data, filepath)
@@ -147,6 +142,7 @@ class SequentialStrokeData(Dataset):
         """
         Load preprocessed data and constructor parameters from a file.
         """
+        print(filepath)
         data = torch.load(filepath)
         
         # Load constructor parameters
@@ -161,12 +157,12 @@ class SequentialStrokeData(Dataset):
         self.strokes = preprocessed_data.get('strokes', [])
         self.sort_idx = preprocessed_data.get('sort_idx', [])
         self.labels = preprocessed_data.get('labels', None)
-        self.x_mean = preprocessed_data.get('x_mean', torch.tensor(0.0))
-        self.x_std = preprocessed_data.get('x_std', torch.tensor(1.0))
-        self.y_mean = preprocessed_data.get('y_mean', torch.tensor(0.0))
-        self.y_std = preprocessed_data.get('y_std', torch.tensor(1.0))
-        self.t_mean = preprocessed_data.get('t_mean', torch.tensor(0.0))
-        self.t_std = preprocessed_data.get('t_std', torch.tensor(1.0))
+        self.dx_mean = preprocessed_data.get('dx_mean', torch.tensor(0.0))
+        self.dx_std = preprocessed_data.get('dx_std', torch.tensor(1.0))
+        self.dy_mean = preprocessed_data.get('dy_mean', torch.tensor(0.0))
+        self.dy_std = preprocessed_data.get('dy_std', torch.tensor(1.0))
+        self.dt_mean = preprocessed_data.get('dt_mean', torch.tensor(0.0))
+        self.dt_std = preprocessed_data.get('dt_std', torch.tensor(1.0))
         
         print(f"Preprocessed data and constructor parameters loaded from '{filepath}'.")
 
@@ -176,8 +172,8 @@ class SequentialStrokeData(Dataset):
     def __getitem__(self, idx):
         data = self.strokes[idx].clone() # (N,4): x,y,t,p
 
-        print("This is the data before normalization: ", data[:5])
-        animate_strokes(data.numpy(), delta=False, use_actual_time=False, save_gif=True, num_frames=500, gif_fp="output/doodle_anims/BeforeNormDelta.gif", dx_mean=self.dx_mean, dx_std=self.dx_std, dy_mean=self.dy_mean, dy_std=self.dy_std, dt_mean=self.dt_mean, dt_std=self.dt_std)
+        #print("This is the data before normalization: ", data[:5])
+        #animate_strokes(data.numpy(), delta=False, use_actual_time=False, save_gif=True, num_frames=500, gif_fp="output/doodle_anims/BeforeNormDelta.gif", dx_mean=self.dx_mean, dx_std=self.dx_std, dy_mean=self.dy_mean, dy_std=self.dy_std, dt_mean=self.dt_mean, dt_std=self.dt_std)
     
         # Optional augmentation before normalization and delta:
         if self.augment_stroke_prob > 0:
@@ -194,15 +190,8 @@ class SequentialStrokeData(Dataset):
         data[:,1] = (dy - self.dy_mean)/self.dy_std
         data[:,2] = (dt - self.dt_mean)/self.dt_std
 
-        print("This is what the data looks like after: \n", data)
-        animate_strokes(data.numpy(), delta=True, use_actual_time=True, save_gif=True, num_frames=500, gif_fp="output/doodle_anims/afterNormDelta.gif", dx_mean=self.dx_mean, dx_std=self.dx_std, dy_mean=self.dy_mean, dy_std=self.dy_std, dt_mean=self.dt_mean, dt_std=self.dt_std)
-
-        """
-        # Normalize (x,y,t) using global stats from above
-        data[:,0] = (data[:,0] - self.x_mean)/self.x_std
-        data[:,1] = (data[:,1] - self.y_mean)/self.y_std
-        data[:,2] = (data[:,2] - self.t_mean)/self.t_std
-        """
+        #print("This is what the data looks like after: \n", data)
+        #animate_strokes(data.numpy(), delta=True, use_actual_time=True, save_gif=True, num_frames=500, gif_fp="output/doodle_anims/afterNormDelta.gif", dx_mean=self.dx_mean, dx_std=self.dx_std, dy_mean=self.dy_mean, dy_std=self.dy_std, dt_mean=self.dt_mean, dt_std=self.dt_std)
 
         # Pen state one-hot:
         # data[:,3] = p. p=1 pen down, p=0 pen up.

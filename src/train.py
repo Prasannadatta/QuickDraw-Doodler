@@ -41,15 +41,19 @@ def handle_model_training(subset_labels, data_mode, num_samples_per_class, model
             test_loader.dataset.save_preprocessed(f"quickdraw_data/vae_preprocessed-nspc{str(num_samples_per_class)[:-3]}k/test_vae_dataset.pt")
         else:
             # init datasets from filepath
-            data_files = os.listdir(preprocessed_fp=processed_data_path)
-            datasets = [SequentialStrokeData(fp) for fp in data_files]
+            data_files = os.listdir(processed_data_path)
+            data_files = [os.path.join(processed_data_path, fn) for fn in data_files]
+            print(f"Found following preprocessed data files to load: {data_files}")
+            datasets = [SequentialStrokeData(preprocessed_fp=fp) for fp in data_files]
             
             # sort datasets, since train will have most, val second, and third least
             # this is how we distinguish which dataset goes to which loader
             sorted_datasets = sorted(datasets, key= lambda dataset: dataset.__len__(), reverse=True)
             train_loader = init_sequential_dataloaders_from_dataset(sorted_datasets[0], rnn_configs, shuffle=True)
             val_loader = init_sequential_dataloaders_from_dataset(sorted_datasets[1], rnn_configs, shuffle=False)
-
+        
+        print(f"NUM TRAINING SAMPLES LOADED: {len(train_loader.dataset)}")
+        print(f"NUM VALIDATION SAMPLES LOADED: {len(val_loader.dataset)}")
     else:
         download_img_data(subset_labels, data_mode, num_samples_per_class) # download data if not already
         X, y = load_simplified_data(subset_labels, data_mode, num_samples_per_class) # grab and parse .npy files (one file for each class)

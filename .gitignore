@@ -1,8 +1,7 @@
-quickdraw_data/full/*
-quickdraw_data/simplified/*
-quickdraw_data/reduced/*
+quickdraw_data/*
 .quickdrawcache
 .hfcache
+
 
 output/figs/*
 output/model_ckpts/*

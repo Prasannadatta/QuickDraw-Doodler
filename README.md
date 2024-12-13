@@ -155,7 +155,7 @@ rnn params are as follows:
     "in_size": 6,               # stroke_6 format (dx, dy, dt, p1, p2, p3)
     "num_epochs": 3,            # number of epochs for training
     "batch_size": 100,          # num samples per step
-    "max_seq_len": 250,         # max length of sequences (of full samples not indv strokes) post RDP line simplification
+    "max_seq_len": 169,         # max length of sequences (of full samples not indv strokes) post RDP line simplification
     "latent_size": 128,         # size of the latent space between encoder and decoder
     "enc_hidden_size": 256,     # encoder size of each layers hidden and cell state vectors
     "dec_hidden_size": 512,     # decoder size of each layers hidden and cell state vectors

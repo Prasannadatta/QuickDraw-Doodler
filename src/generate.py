@@ -70,5 +70,5 @@ def handle_doodle_generation(model_type, model_fp, device, label=None, sample_ou
 def generate_sketch(sketch, fp):
     '''expects N,6 tensor'''
     pass
-    animate_strokes(sketch, use_actual_time=True, save_gif=True, gif_fp=sample_out_fp)
-    print(f"Saved sample animation to: {sample_out_fp}")
+    #animate_strokes(sketch, use_actual_time=True, save_gif=True, gif_fp=sample_out_fp)
+    #print(f"Saved sample animation to: {sample_out_fp}")

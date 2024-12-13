@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 
 from models.mdn import MDN
 from models.lstm import RecurDropLayerNormLSTM
-from src.generate import generate_sketch
 from utils.process_data import get_real_samples_from_dataloader
 from utils.metrics_visualize import plot_generator_metrics, log_metrics, distribution_comparison
     
@@ -379,6 +378,7 @@ def validate(val_loader, rnn, device, metrics):
 
 def train_rnn(train_loader, val_loader, subset_labels, device, rnn_config):    
     # get model's params and filter config file for them
+    print("Initializing VAE and beginning training...")
     rnn_config.update({'num_labels': len(subset_labels)})
     rnn_config.update({'subset_labels': subset_labels})
     rnn_signature = inspect.signature(DoodleGenRNN.__init__)
@@ -471,6 +471,8 @@ def train_rnn(train_loader, val_loader, subset_labels, device, rnn_config):
                 model_summary_file.write(str(model_summary))
 
         if epoch % 10 == 0:
+            from src.generate import generate_sketch
+
             # distribution metrics every 10 epochs
             print("Analyzing real and generated data distributions...")
             
@@ -480,8 +482,8 @@ def train_rnn(train_loader, val_loader, subset_labels, device, rnn_config):
             gen_x, gen_y, gen_t = [], [], []
             while seq_pt_count < max_seq_points:
                 gen_sketch = rnn.sample_sketch(rnn_config['max_seq_len'])
-                #if sample_count <= 3:
-                    #generate_sketch(gen_sketch, f"{log_dir}/DoodleGenRNN-sample-sketch-epoch{epoch+1}-{start_time}.png")
+                if sample_count <= 3:
+                    generate_sketch(gen_sketch, f"{log_dir}/DoodleGenRNN-sample-sketch-epoch{epoch+1}-{start_time}.png")
                 seq_pt_count += gen_sketch.size(0)
                 sample_count += 1
                 gen_dx = gen_sketch[:, 0].numpy().flatten()
