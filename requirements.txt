@@ -11,3 +11,4 @@ opencv-python
 tqdm
 scipy
 seaborn
+rdp
