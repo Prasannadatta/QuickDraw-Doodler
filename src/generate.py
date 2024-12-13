@@ -55,23 +55,20 @@ def generate_conditional(rnn, label, device, seq_len=125):
             
     return np.array(strokes)
 
-def generate_uncoditional(model, T=1, z_scale=1):
-    pass
-
 def handle_doodle_generation(model_type, model_fp, device, label=None, sample_out_fp="output/doodle_anims/sampled_doodle.gif"):
     if not os.path.isfile(model_fp):
         raise FileNotFoundError(f"Error: File not found at path specified: {model_fp}")
-    
-    if model_type == ModelType.RNN:
-        rnn, optim, metadata = load_model(model_fp, DoodleGenRNN, device, label)
-        if label:
-            label_map = {label: i for i, label in enumerate(rnn.subset_labels)}
-            label = label_map[label]
-            sample = generate_conditional(rnn, label, device)
-        else:
-            sample = generate_uncoditional(rnn, device)
-    print(f"Loaded model stats:{metadata}")
-    print(sample)
-    animate_strokes(sample, use_actual_time=True, save_gif=True, gif_fp=sample_out_fp)
-    
+
+    vae = load_model()
+    #print(f"Loaded model stats:{metadata}")
+
+    sketch = vae.sample_sketch()
+
+    animate_strokes(sketch, use_actual_time=True, save_gif=True, gif_fp=sample_out_fp)
+    print(f"Saved sample animation to: {sample_out_fp}")
+
+def generate_sketch(sketch, fp):
+    '''expects N,6 tensor'''
+    pass
+    animate_strokes(sketch, use_actual_time=True, save_gif=True, gif_fp=sample_out_fp)
     print(f"Saved sample animation to: {sample_out_fp}")

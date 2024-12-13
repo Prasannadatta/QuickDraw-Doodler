@@ -88,8 +88,13 @@ Below are descriptions of the main command-line arguments for the `main.py` scri
 `python main.py --mode train --data_mode simplified --num_samples_per_class 10000`
 
 - Train rnn for generation while downloading and processing data if missing or different amount that currently exists. (100,000 samples per class) using full stroke-based data:
-`python main.py -m train -dm full -mt rnn -nspc 50000`
-`python main.py --mode train --data_mode full --model_type rnn --num_samples_per_class 50000`
+`python main.py -m train -dm full -mt rnn -nspc 100000`
+`python main.py --mode train --data_mode full --model_type rnn --num_samples_per_class 100000`
+
+- Same as above, but if training has been ran once before and the data was downloaded and preprocessed, specify a data path to load the data already processed.
+**NOTE** This folder should contain the files `vae_train.pt`, `vae_val.pt`, and `vae_test.pt`, **AND** the args pertaining to data processing used when these were generated should match what is currently in the model_params.json 
+`python main.py -m train -dm full -mt rnn -nspc 100000 -pdp "quickdraw_data/vae_preprocessed-nspc100k/`
+`python main.py --mode train --data_mode full --model_type rnn --num_samples_per_class 100000 --processed_data_path "quickdraw_data/vae_preprocessed-nspc100k/"`
 
 Once training is complete, you can generate new doodles or perform inference using trained models:
 - Generate doodles with a trained model (model path required):
@@ -137,8 +142,6 @@ Once training is complete, you can generate new doodles or perform inference usi
 
 - `config/subset_classes.json` is where we specify the list of classes used for each of the 3 modes, since using all 354 classes would be insane for a class project. 
 - `config/model_params.json` is where we specify the dict of hyperparameters for the RNN and CNN. 
-<<<<<<< HEAD
-=======
 
 
 ## Model Parameters
@@ -200,4 +203,3 @@ rnn params are as follows:
 - [x] layer norm - decoder?
 - [x] check model_params.json alignment with vae args
 - [x] sample from the model
->>>>>>> rnnv3-architecture

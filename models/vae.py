@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 
 from models.mdn import MDN
 from models.lstm import RecurDropLayerNormLSTM
-from utils.process_data import init_sequential_dataloaders, get_real_samples_from_dataloader
+from src.generate import generate_sketch
+from utils.process_data import get_real_samples_from_dataloader
 from utils.metrics_visualize import plot_generator_metrics, log_metrics, distribution_comparison
     
 class DoodleGenRNN(nn.Module):
@@ -376,15 +377,12 @@ def validate(val_loader, rnn, device, metrics):
     metrics['val']['kl_div_loss'].append(running_kl_loss / n)
     metrics['val']['recon_loss'].append(running_recon_loss / n)
 
-def train_rnn(X, y, subset_labels, device, rnn_config):    
+def train_rnn(train_loader, val_loader, subset_labels, device, rnn_config):    
     # get model's params and filter config file for them
     rnn_config.update({'num_labels': len(subset_labels)})
     rnn_config.update({'subset_labels': subset_labels})
     rnn_signature = inspect.signature(DoodleGenRNN.__init__)
     rnn_params = {k: v for k, v in rnn_config.items() if k in rnn_signature.parameters}
-
-    print("Preparing dataset...")
-    train_loader, val_loader, _ = init_sequential_dataloaders(X, y, rnn_config)
 
     rnn = DoodleGenRNN(**rnn_params).to(device)
     rnn.apply(init_weights)
@@ -477,11 +475,15 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
             print("Analyzing real and generated data distributions...")
             
             seq_pt_count = 0
+            sample_count = 0
             max_seq_points = 5000
             gen_x, gen_y, gen_t = [], [], []
             while seq_pt_count < max_seq_points:
                 gen_sketch = rnn.sample_sketch(rnn_config['max_seq_len'])
+                #if sample_count <= 3:
+                    #generate_sketch(gen_sketch, f"{log_dir}/DoodleGenRNN-sample-sketch-epoch{epoch+1}-{start_time}.png")
                 seq_pt_count += gen_sketch.size(0)
+                sample_count += 1
                 gen_dx = gen_sketch[:, 0].numpy().flatten()
                 gen_dy = gen_sketch[:, 1].numpy().flatten()
                 gen_dt = gen_sketch[:, 2].numpy().flatten()
@@ -493,8 +495,6 @@ def train_rnn(X, y, subset_labels, device, rnn_config):
             gen_t = np.concatenate(gen_t)[:max_seq_points]
 
             real_x, real_y, real_t = get_real_samples_from_dataloader(val_loader, max_samples=max_seq_points)
-            print(gen_x, '\n', real_x, '\n\n')
-            print(gen_x.shape, real_x.shape)
             
             # init new figure for current iteration
             fig, ax = plt.subplots(3,1, figsize=(16, 12))

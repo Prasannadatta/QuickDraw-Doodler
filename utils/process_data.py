@@ -10,32 +10,40 @@ import numpy as np
 import os
 
 class SequentialStrokeData(Dataset):
-    def __init__(
+    def __init__( # if strokes are none, preprocessed_fp must contain filepath to data
             self,
-            strokes,        # list of np arrs dims (x, y, t, p) x N; (will be transposed to Nx4)
+            strokes=None,   # list of np arrs dims (x, y, t, p) x N; (will be transposed to Nx4)
             labels=None,    # array of labels (same length as strokes)
             max_len=169,    # max sequence len
             random_scale_factor=0.0,    # amt to randomly scale stokes
             augment_stroke_prob=0.0,    # chance to augment strokes
-            limit=1000
+            limit=1000,
+            preprocessed_fp=None      # filepath to data that's been saved by this class
         ):
 
-        self.max_len = max_len
-        self.random_scale_factor = random_scale_factor
-        self.augment_stroke_prob = augment_stroke_prob
-        self.limit = limit
+        if strokes is None and preprocessed_fp is None:
+            raise ValueError("ERROR: Must specify either stroke data or filepath to preprocessed data")
 
-        print("Preprocessing data...")
-        self.strokes, self.sort_idx = self.preprocess(strokes) # list of np arrs dims N x (x, y, t, p)
-
-        if labels is not None:
-            self.labels = torch.tensor(labels, dtype=torch.long)[self.sort_idx]
+        # load preprocessed data if fp given
+        if preprocessed_fp is not None:
+            self.load_preprocessed(preprocessed_fp)
         else:
-            self.labels = None
-            
-        # Compute global normalization stats (x,y,t)
-        print("Computing normalization stats...")
-        self.x_mean, self.x_std, self.y_mean, self.y_std, self.t_mean, self.t_std = self.calculate_global_stats()
+            self.max_len = max_len
+            self.random_scale_factor = random_scale_factor
+            self.augment_stroke_prob = augment_stroke_prob
+            self.limit = limit
+
+            print("Preprocessing data...")
+            self.strokes, self.sort_idx = self.preprocess(strokes) # list of np arrs dims N x (x, y, t, p)
+
+            if labels is not None:
+                self.labels = torch.tensor(labels, dtype=torch.long)[self.sort_idx]
+            else:
+                self.labels = None
+                
+            # Compute global normalization stats (x,y,t)
+            print("Computing normalization stats...")
+            self.x_mean, self.x_std, self.y_mean, self.y_std, self.t_mean, self.t_std = self.calculate_global_stats()
 
     def preprocess(self, strokes):
         """
@@ -49,7 +57,6 @@ class SequentialStrokeData(Dataset):
         for stroke_seq in strokes:
             if stroke_seq.shape[0] == 4: # if 4xN, transpose to Nx4
                 stroke_seq = stroke_seq.T
-
             # RDP - Ramer-Douglas-Peuker algorithm
             Ramer_set = []
 
@@ -98,6 +105,60 @@ class SequentialStrokeData(Dataset):
         print(x_mean, x_std, y_mean, y_std, t_mean, t_std)
 
         return x_mean, x_std, y_mean, y_std, t_mean, t_std
+
+    def save_preprocessed(self, filepath):
+        """
+        Save the preprocessed data to a file.
+        """
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        data = {
+            'constructor_params': {
+                'max_len': self.max_len,
+                'random_scale_factor': self.random_scale_factor,
+                'augment_stroke_prob': self.augment_stroke_prob,
+                'limit': self.limit
+            },
+            'preprocessed_data': {
+                'strokes': self.strokes,
+                'sort_idx': self.sort_idx,
+                'labels': self.labels,
+                'x_mean': self.x_mean,
+                'x_std': self.x_std,
+                'y_mean': self.y_mean,
+                'y_std': self.y_std,
+                't_mean': self.t_mean,
+                't_std': self.t_std
+            }
+        }
+        torch.save(data, filepath)
+        print(f"Preprocessed data and constructor parameters saved to '{filepath}'.")
+
+    def load_preprocessed(self, filepath):
+        """
+        Load preprocessed data and constructor parameters from a file.
+        """
+        data = torch.load(filepath)
+        
+        # Load constructor parameters
+        constructor_params = data.get('constructor_params', {})
+        self.max_len = constructor_params.get('max_len', 169)
+        self.random_scale_factor = constructor_params.get('random_scale_factor', 0.0)
+        self.augment_stroke_prob = constructor_params.get('augment_stroke_prob', 0.0)
+        self.limit = constructor_params.get('limit', 1000)
+        
+        # Load preprocessed data
+        preprocessed_data = data.get('preprocessed_data', {})
+        self.strokes = preprocessed_data.get('strokes', [])
+        self.sort_idx = preprocessed_data.get('sort_idx', [])
+        self.labels = preprocessed_data.get('labels', None)
+        self.x_mean = preprocessed_data.get('x_mean', torch.tensor(0.0))
+        self.x_std = preprocessed_data.get('x_std', torch.tensor(1.0))
+        self.y_mean = preprocessed_data.get('y_mean', torch.tensor(0.0))
+        self.y_std = preprocessed_data.get('y_std', torch.tensor(1.0))
+        self.t_mean = preprocessed_data.get('t_mean', torch.tensor(0.0))
+        self.t_std = preprocessed_data.get('t_std', torch.tensor(1.0))
+        
+        print(f"Preprocessed data and constructor parameters loaded from '{filepath}'.")
 
     def __len__(self):
         return len(self.strokes)
@@ -255,15 +316,14 @@ def collate_sketches(batch, max_len=250):
     else:
         labels = None
 
-    torch.set_printoptions(edgeitems=2)
-    print("Here is the end of a sample before padding: \n", data[-2:])
+    #torch.set_printoptions(edgeitems=2)
+    #print("Here is the end of a sample before padding: \n", data[-2:])
     padded_samples = pad_batch(data, max_len)
-    print("Here is the end of a sample after padding: \n", padded_samples[-2:])
-    raise KeyboardInterrupt
+    #print("Here is the end of a sample after padding: \n", padded_samples[-2:])
 
     return padded_samples, lengths, labels
 
-def init_sequential_dataloaders(X, y, config):
+def init_sequential_dataloaders_from_numpy(X, y, config, num_workers=4):
     """
     Take in data in numpy normalized format and:
     1. strat split data
@@ -293,16 +353,28 @@ def init_sequential_dataloaders(X, y, config):
         max_len=config['max_seq_len']
     )
 
+    train_loader = init_sequential_dataloaders_from_dataset(train_dataset, config, shuffle=True, num_workers=num_workers)
+    val_loader = init_sequential_dataloaders_from_dataset(val_dataset, config, shuffle=False, num_workers=num_workers)
+    test_loader = init_sequential_dataloaders_from_dataset(test_dataset, config, shuffle=False, num_workers=num_workers)
+
+    return train_loader, val_loader, test_loader
+
+def init_sequential_dataloaders_from_dataset(dataset, config, shuffle=False, num_workers=4):
     # collate fn needs max_len arg, but can't pass arg directly to it in Dataloader
     # use class that returns collate fn with this arg
     collate = CollateFn(config['max_seq_len'])
 
     # dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate, num_workers=4)
+    loader = DataLoader(
+        dataset,
+        batch_size=config['batch_size'],
+        shuffle=shuffle,
+        collate_fn=collate,
+        num_workers=num_workers,
+        persistent_workers=True
+    )
 
-    return train_loader, val_loader, test_loader
+    return loader
 
 def get_real_samples_from_dataloader(loader, max_samples=2000):
     real_x, real_y, real_t = [], [], []

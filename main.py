@@ -57,18 +57,16 @@ def main():
     )
 
     parser.add_argument(
-        '-l', '--label',
+        '-pdp', '--processed_data_path',
         type=str,
         default=None,
-        help="Optional label to condition generation on. Must be in list of 'subset_classes' model was trained on"
+        help="Optional to specify when training if you have ran the training code where data is downloaded and preprocessed in the dataloader"
     )
     args = parser.parse_args()
 
     # check model_path arg
     if args.mode in [Mode.GENERATE, Mode.CLASSIFY] and not args.model_path:
         parser.error(f"Argument --model_path is required when mode is {args.mode.value}")
-
-    # check chosen class in subset
 
     # of the available 354 classes for training we will start with as a subset for testing
     with open("config/subset_classes.json", 'r') as subset_file:
@@ -85,7 +83,7 @@ def main():
         handle_doodle_generation(args.model_type, args.model_path, device, args.label)
 
     if args.mode == Mode.TRAIN:
-        handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type, device)
+        handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type, device, args.processed_data_path)
 
 if __name__ == '__main__':
     main()
