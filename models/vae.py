@@ -504,12 +504,12 @@ def train_rnn(train_loader, val_loader, subset_labels, device, rnn_config):
             jsds, wds = [], []
             for i, (real_data, gen_data, data_var) in enumerate([(real_x, gen_x, 'dx'), (real_y, gen_y, 'dy'), (real_t, gen_t, 'dt')]):
                 fig, ax, jsd, wd = distribution_comparison(fig, ax, i, real_data, gen_data, data_var, epoch+1, log_dir)
-                jsds.append(jsd)
-                wds.append(wd)
+                jsds.append(round(jsd, 4))
+                wds.append(round(wd, 4))
             fname = f"{log_dir}/DoodleGenRNN-distributions-epoch{epoch+1}-{start_time}.png"
             fig.savefig(fname, dpi=300) 
-            dist_metrics[f"JSD-xyt-epoch-{epoch+1}"] = jsd
-            dist_metrics[f"WD-xyt-epoch-{epoch+1}"] = wd
-            log_metrics(dist_metrics, f"DoodleGenRNN-distributions-epoch{epoch+1}-{start_time}", log_dir)
+            dist_metrics[f"JSD-xyt-epoch-{epoch+1}"] = jsds
+            dist_metrics[f"WD-xyt-epoch-{epoch+1}"] = wds
+            log_metrics(dist_metrics, f"DoodleGenRNN-distributions-epoch{epoch+1}-{start_time}.log", log_dir)
             plt.close(fig)
             print("Done! Next epoch starting...")

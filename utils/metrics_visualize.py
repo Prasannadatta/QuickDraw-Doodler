@@ -6,7 +6,7 @@ import numpy as np
 from scipy.stats import wasserstein_distance
 from scipy.special import rel_entr
 
-def compute_jsd_wd(real_data, gen_data, num_bins=400):
+def compute_jsd_wd(real_data, gen_data, num_bins=400, epsilon=1e-10):
     # Compute histograms
     hist_range = (min(real_data.min(), gen_data.min()), max(real_data.max(), gen_data.max()))
     hist_real, bin_edges = np.histogram(real_data, bins=num_bins, range=hist_range, density=True)
@@ -15,9 +15,11 @@ def compute_jsd_wd(real_data, gen_data, num_bins=400):
     # JSD
     hist_real = np.asarray(hist_real, dtype=np.float64)
     hist_gen = np.asarray(hist_gen, dtype=np.float64)
+    hist_real += epsilon # avoid log(0)
+    hist_gen += epsilon
     m = 0.5 * (hist_real + hist_gen)
     jsd = 0.5 * (np.sum(rel_entr(hist_real, m)) + np.sum(rel_entr(hist_gen, m)))
-    normalized_jsd = jsd / np.log(2)
+    normalized_jsd = 1 - (jsd / np.log(2))
     
     # WD
     wd = wasserstein_distance(real_data, gen_data)
@@ -61,16 +63,16 @@ def distribution_comparison(fig, ax, var_idx, real_data, gen_data, variable_name
     
     jsd, wd, bin_edges, hist_real, hist_gen = compute_jsd_wd(real_data, gen_data)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:]) # get center of histogram bins
-    
+    bin_width = bin_edges[1] - bin_edges[0]
+
     # plot real data as a histogram
-    ax[var_idx].hist(
+    ax[var_idx].bar(
         bin_centers, 
-        bins=bin_edges, 
-        weights=hist_real, 
+        hist_real, 
+        width=bin_width, 
         alpha=0.6, 
         color='red', 
-        density=False, 
-        label=f'{variable_name} Real Data',
+        label=f'{variable_name} Real Data'
     )
 
     # plot generated data as a line
@@ -84,7 +86,7 @@ def distribution_comparison(fig, ax, var_idx, real_data, gen_data, variable_name
 
     # Set labels and title
     ax[var_idx].set_xlabel(variable_name, fontsize=12)
-    ax[var_idx].set_ylabel('Count', fontsize=12)
+    ax[var_idx].set_ylabel('Density', fontsize=12)
     ax[var_idx].set_title(f'Distribution Comparison: {variable_name} - Epoch {epoch}\nJSD: {jsd:.4f}, WD: {wd:.4f}', fontsize=14)
     
     ax[var_idx].legend(fontsize=12)
