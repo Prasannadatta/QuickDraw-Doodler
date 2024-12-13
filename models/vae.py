@@ -39,6 +39,7 @@ class DoodleGenRNN(nn.Module):
         self.apply(init_weights)
         self.mdn = MDN(num_gmm_modes)
 
+        self.in_size = in_size
         self.enc_hidden_size = enc_hidden_size
         self.dec_hidden_size = dec_hidden_size
         self.decoder_act = decoder_act
@@ -70,7 +71,7 @@ class DoodleGenRNN(nn.Module):
             # jit script allows torch to compile the model and run it much more efficiently
             self.lstm_decoder = torch.jit.script(
                 RecurDropLayerNormLSTM(
-                    input_size=in_size,
+                    input_size=in_size + latent_size,
                     hidden_size=dec_hidden_size,
                     num_layers=num_lstm_layers,
                     batch_first=True,
@@ -80,7 +81,7 @@ class DoodleGenRNN(nn.Module):
             )
         else:
             self.lstm_decoder = nn.LSTM(
-                input_size=in_size,
+                input_size=in_size + latent_size,
                 hidden_size=dec_hidden_size,
                 num_layers=num_lstm_layers,
                 batch_first=True,
@@ -165,10 +166,14 @@ class DoodleGenRNN(nn.Module):
         # Prepare inputs
         if inputs is None:
             batch_size = z.size(0)
-            inputs = torch.zeros((batch_size, seq_len.size(0), self.lstm_decoder.input_size), device=z.device)
+            inputs = torch.zeros((batch_size, seq_len.size(0), self.in_size), device=z.device)
 
         # pass entire sequence through decoder
-        decoder_output, _ = self.lstm_decoder(inputs, hidden)
+        # expand z to match_input dim
+        batch_size, seq_length, _ = inputs.size()
+        z_exp = z.unsqueeze(1).expand(batch_size, seq_length, z.size(-1))
+        decoder_inputs = torch.cat((inputs, z_exp), dim=-1) # cat inputs and z for decoder
+        decoder_output, _ = self.lstm_decoder(decoder_inputs, hidden)
 
         return decoder_output
 
@@ -192,8 +197,13 @@ class DoodleGenRNN(nn.Module):
         hidden = (h0, c0)
 
         # Start the sketch with a zero vector (SOS input token)
-        input_size = self.lstm_decoder.input_size
-        input_t = torch.zeros((1, 1, input_size), device=z.device)
+        input0 = torch.zeros((1, 1, self.in_size), device=z.device) # (1, 1, 6)
+
+        #expand z to match input for concatenation
+        z_exp = z.unsqueeze(1) # (1,1,latent_size)
+
+        # cat SOS token and z
+        input_t = torch.cat([input0, z_exp], dim=-1)
         
         sketch = []
         for _ in range(seq_len):
@@ -208,6 +218,9 @@ class DoodleGenRNN(nn.Module):
 
             # prepare the next input as step we just sampled
             input_t = sampled_point.unsqueeze(0).unsqueeze(0).to(device) # (1, 1, 6)
+            
+            # concat z again for next input
+            input_t = torch.cat([input_t, z_exp], dim=-1)
 
             # break early if EOS token reached
             pen_state_idx = torch.argmax(sampled_point[3:]).item()
