@@ -57,6 +57,7 @@ def plot_generator_metrics(metrics, cur_time, cur_epoch, save_dir):
     fn = f"DoodleGenRNN-losses-{cur_time}.png"
     fp = os.path.join(save_dir, fn)
     plt.savefig(fp, dpi=400)
+    plt.close(fig)
 
 def distribution_comparison(fig, ax, var_idx, real_data, gen_data, variable_name, epoch, log_dir):
     os.makedirs(log_dir, exist_ok=True)

@@ -17,7 +17,8 @@ from models.mdn import MDN
 from models.lstm import RecurDropLayerNormLSTM
 from utils.process_data import get_real_samples_from_dataloader
 from utils.metrics_visualize import plot_generator_metrics, log_metrics, distribution_comparison
-    
+#torch.autograd.set_detect_anomaly(True)
+
 class DoodleGenRNN(nn.Module):
     def __init__(
             self,
@@ -268,6 +269,7 @@ def train(
         rnn,
         optim,
         scheduler,
+        grad_clip,
         anneal_factor,
         kl_tolerance,
         reg_covar, 
@@ -306,6 +308,8 @@ def train(
 
         optim.zero_grad() # zero previous iterations grads
         loss.backward() # back prop
+        if grad_clip is not None:
+            nn.utils.clip_grad_value_(rnn.parameters(), grad_clip)
         optim.step() # take gradient step
         scheduler.step() # decrease lr
 
@@ -439,6 +443,7 @@ def train_rnn(train_loader, val_loader, subset_labels, device, rnn_config):
             rnn,
             optim,
             scheduler,
+            rnn_config['grad_clip'],
             weighted_anneal_factor,
             rnn_config['kl_tolerance'],
             rnn_config['reg_covar'],

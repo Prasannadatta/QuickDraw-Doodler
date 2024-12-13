@@ -101,7 +101,7 @@ def vector_to_raster(
 
     return raster_images
 
-def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_frames=500, gif_fp='sample.gif', dx_mean=0, dx_std=1, dy_mean=0, dy_std=1, dt_mean=0, dt_std=1):
+def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_frames=500, gif_fp='sample.gif', dxy_std=1, dt_std=1):
     
     """
     Animate strokes with optional undo of normalization.
@@ -122,16 +122,16 @@ def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_
     pen_state = data[:, 3]
 
     if delta:
-        dx_std, dx_mean, dy_std, dy_mean = dx_std.numpy(), dx_mean.numpy(), dy_std.numpy(), dy_mean.numpy()
-        dx = data[:, 0] * dx_std + dx_mean
-        dy = data[:, 1] * dy_std + dy_mean
+        dxy_std = dxy_std.numpy()
+        dx = data[:, 0] * dxy_std
+        dy = data[:, 1] * dxy_std
         # Compute cumulative sums for positions and times
         x = np.cumsum(dx)
         y = np.cumsum(dy)
 
     if use_actual_time:
-        dt_mean, dt_std = dt_mean.numpy(), dt_std.numpy()
-        dt = data[:, 2] * dt_std + dt_mean
+        dt_std = dt_std.numpy()
+        dt = data[:, 2] * dt_std
         time = np.cumsum(dt)
 
     # Build strokes
@@ -159,9 +159,7 @@ def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_
     if current_stroke_x:
         strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
 
-    if current_stroke_x:
-        strokes.append({'x': current_stroke_x, 'y': current_stroke_y, 't': current_stroke_t})
-
+    
     # Set up the plot
     fig, ax = plt.subplots()
     ax.axis('off')

@@ -41,9 +41,10 @@ class SequentialStrokeData(Dataset):
             else:
                 self.labels = None
             
-            # Compute global normalization stats (x,y,t)
-            print("Computing normalization stats...")
-            self.dx_mean, self.dx_std, self.dy_mean, self.dy_std, self.dt_mean, self.dt_std = self.calculate_global_stats()
+
+            # Normalize data and convert to (dx, dy, dt, p)
+            print("Normalizing data...")
+            self.compute_deltas_and_normalize()
 
     def preprocess(self, strokes):
         """
@@ -90,26 +91,54 @@ class SequentialStrokeData(Dataset):
         print(f"total drawings <= max_seq_len is {count_data}")
         return processed_strokes, sort_idx
     
-    def calculate_global_stats(self):
-        # Concatenate all for mean/std
-        # shape (N,4): x,y,t,p
-        all_data = torch.cat(self.strokes, dim=0)
-        x = all_data[:,0]
-        y = all_data[:,1]
-        t = all_data[:,2]
+    def compute_deltas_and_normalize(self):
+        """
+        Calculate normalizing scale factors for dx/dy and dt and apply them to all strokes.
+        Converts each stroke from (x, y, t, p) to normalized (dx, dy, dt, p).
+        """
+        # Filter strokes
+        strokes = [elt for elt in self.strokes if len(elt) <= self.max_len]
 
-        # Calculate deltas (differences between consecutive points)
-        dx = torch.cat([x[:1], x[1:] - x[:-1]])  # Append first element to match size
-        dy = torch.cat([y[:1], y[1:] - y[:-1]])  # Append first element to match size
-        dt = torch.cat([t[:1], t[1:] - t[:-1]])  # Append first element to match size
+        # Concatenate all
+        data = torch.cat(strokes, dim=0)  # (M,4): x,y,t,p
+        x = data[:,0]
+        y = data[:,1]
+        t = data[:,2]
 
-        # Calculate mean and std for delta x, delta y, delta t
-        dx_mean, dx_std = dx.mean(), dx.std()
-        dy_mean, dy_std = dy.mean(), dy.std()
-        dt_mean, dt_std = dt.mean(), dt.std()
+        # Compute deltas
+        dx = torch.cat([x[:1], x[1:] - x[:-1]])
+        dy = torch.cat([y[:1], y[1:] - y[:-1]])
+        dt = torch.cat([t[:1], t[1:] - t[:-1]])
 
+        # Calculate scale factors
+        dx_dy = torch.stack([dx, dy], dim=1)  # (M,2)
+        self.dxy_std = dx_dy.std()  # single scale factor for dx, dy
+        self.dt_std = dt.std()
 
-        return dx_mean, dx_std, dy_mean, dy_std, dt_mean, dt_std
+        '''for i, stroke in enumerate(strokes): 
+            print(stroke)
+            animate_strokes(stroke.numpy(), delta=False, use_actual_time=False, save_gif=True, gif_fp=f"output/doodle_anims/before{i}.gif")
+            if i >5:
+                raise KeyboardInterrupt'''
+
+        # Normalize each stroke
+        for i in range(len(self.strokes)):
+            stroke = self.strokes[i]  # (N,4): x,y,t,p
+            x = stroke[:,0]
+            y = stroke[:,1]
+            t = stroke[:,2]
+            p = stroke[:,3]
+
+            dx = torch.cat([x[:1], x[1:] - x[:-1]]).to(torch.float32)
+            dy = torch.cat([y[:1], y[1:] - y[:-1]]).to(torch.float32)
+            dt = torch.cat([t[:1], t[1:] - t[:-1]]).to(torch.float32)
+
+            dx = dx / self.dxy_std
+            dy = dy / self.dxy_std
+            dt = dt / self.dt_std
+
+            self.strokes[i] = torch.stack([dx, dy, dt, p], dim=1)  # (N,4)
+
 
     def save_preprocessed(self, filepath):
         """
@@ -127,11 +156,7 @@ class SequentialStrokeData(Dataset):
                 'strokes': self.strokes,
                 'sort_idx': self.sort_idx,
                 'labels': self.labels,
-                'dx_mean': self.dx_mean,
-                'dx_std': self.dx_std,
-                'dy_mean': self.dy_mean,
-                'dy_std': self.dy_std,
-                'dt_mean': self.dt_mean,
+                'dxy_std': self.dxy_std,
                 'dt_std': self.dt_std
             }
         }
@@ -157,11 +182,7 @@ class SequentialStrokeData(Dataset):
         self.strokes = preprocessed_data.get('strokes', [])
         self.sort_idx = preprocessed_data.get('sort_idx', [])
         self.labels = preprocessed_data.get('labels', None)
-        self.dx_mean = preprocessed_data.get('dx_mean', torch.tensor(0.0))
-        self.dx_std = preprocessed_data.get('dx_std', torch.tensor(1.0))
-        self.dy_mean = preprocessed_data.get('dy_mean', torch.tensor(0.0))
-        self.dy_std = preprocessed_data.get('dy_std', torch.tensor(1.0))
-        self.dt_mean = preprocessed_data.get('dt_mean', torch.tensor(0.0))
+        self.dxy_std = preprocessed_data.get('dxy_std', torch.tensor(0.0))
         self.dt_std = preprocessed_data.get('dt_std', torch.tensor(1.0))
         
         print(f"Preprocessed data and constructor parameters loaded from '{filepath}'.")
@@ -172,6 +193,10 @@ class SequentialStrokeData(Dataset):
     def __getitem__(self, idx):
         data = self.strokes[idx].clone() # (N,4): x,y,t,p
 
+        '''print(self.strokes[idx])
+        animate_strokes(self.strokes[idx].numpy(), delta=True, use_actual_time=True, save_gif=True, gif_fp=f"output/doodle_anims/after{idx}.gif", dxy_std=self.dxy_std, dt_std=self.dt_std)
+        raise KeyboardInterrupt'''
+
         #print("This is the data before normalization: ", data[:5])
         #animate_strokes(data.numpy(), delta=False, use_actual_time=False, save_gif=True, num_frames=500, gif_fp="output/doodle_anims/BeforeNormDelta.gif", dx_mean=self.dx_mean, dx_std=self.dx_std, dy_mean=self.dy_mean, dy_std=self.dy_std, dt_mean=self.dt_mean, dt_std=self.dt_std)
     
@@ -179,23 +204,16 @@ class SequentialStrokeData(Dataset):
         if self.augment_stroke_prob > 0:
             data = random_augment(data, self.augment_stroke_prob)
 
-
-        # Compute deltas: dx, dy, dt
-        dx = torch.cat([data[:1,0], data[1:,0]-data[:-1,0]])
-        dy = torch.cat([data[:1,1], data[1:,1]-data[:-1,1]])
-        dt = torch.cat([data[:1,2], data[1:,2]-data[:-1,2]])
-
-        # Normalize (x,y,t) using global stats from above
-        data[:,0] = (dx - self.dx_mean)/self.dx_std
-        data[:,1] = (dy - self.dy_mean)/self.dy_std
-        data[:,2] = (dt - self.dt_mean)/self.dt_std
+        dx = data[:,0]
+        dy = data[:,1]
+        dt = data[:,2]
+        p = data[:,3]
 
         #print("This is what the data looks like after: \n", data)
         #animate_strokes(data.numpy(), delta=True, use_actual_time=True, save_gif=True, num_frames=500, gif_fp="output/doodle_anims/afterNormDelta.gif", dx_mean=self.dx_mean, dx_std=self.dx_std, dy_mean=self.dy_mean, dy_std=self.dy_std, dt_mean=self.dt_mean, dt_std=self.dt_std)
 
         # Pen state one-hot:
         # data[:,3] = p. p=1 pen down, p=0 pen up.
-        p = data[:,3]
         p1 = (p==1).float()
         p2 = (p==0).float()
         p3 = torch.zeros_like(p) # will use for EOS later
@@ -221,7 +239,7 @@ class SequentialStrokeData(Dataset):
         label = self.labels[idx] if self.labels is not None else None
         length = stroke_6.shape[0]
 
-    
+        #print(stroke_6)
 
         # Return (data, length, label) similar to what you'd do for a collate_fn
         return (stroke_6, length, label)
@@ -297,7 +315,7 @@ def random_augment(data, prob):
 
 def pad_batch(sequences, max_len):
     """
-    Pad the batch to fixed length.
+    Pad the batch to fixed length with EOS tokens.
     """
     batch_size = len(sequences)
     dim = sequences[0].size(1) # should be 6
