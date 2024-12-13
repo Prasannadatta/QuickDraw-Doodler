@@ -11,7 +11,7 @@
         "recurrent_dropout": 0.1,
         "dropout": 0.0,
         "use_layer_norm": true,
-        "decoder_act": "leaky_relu",
+        "decoder_act": "tanh",
         "num_gmm_modes": 20,
         "learning_rate": 0.001,
         "lr_decay": 0.9999,
