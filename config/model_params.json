@@ -28,7 +28,7 @@
 
     "cnn": {
         "batch_size": 64,
-        "num_epochs": 40,
+        "num_epochs": 10,
         "learning_rate": 0.001,
         "patience": 5
     }
