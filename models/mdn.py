@@ -154,6 +154,9 @@ class MDN:
         #print("pen_probs:", pen_probs)
         #print("Sum of pen_probs:", torch.sum(pen_probs).item())
         # multinomial will choose pen state with probabilities dictated in pen_probs
+        assert (pen_probs >=0).all(), "PEN PROBS NEGATIVE ABORTING"
+        assert abs(pen_probs.sum().item() - 1.0) < 1e-5, "Pen probabilities must sum to 1."
+
         pen_state = torch.multinomial(pen_probs, 1).item()
         
         # onehot pen state

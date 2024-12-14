@@ -80,14 +80,15 @@ Below are descriptions of the main command-line arguments for the `main.py` scri
 - `-mp, --model_path`
   Path to a saved, trained model checkpoint. Required when using `--mode generate` or `--mode infer`.
 
+- `-ng, --num_generations`
+  When generating samples, choose how many samples to generate (default 1)
+
 
 ## Example Commands
 
-- Download and prepare training data (2,000 samples per class) using simplified images:
-`python main.py -m train -dm simplified -nspc 2000`
-`python main.py --mode train --data_mode simplified --num_samples_per_class 10000`
+For all the below training cmds, data is downloaded automatically and updated if arguments do not match existing downloaded data
 
-- Train rnn for generation while downloading and processing data if missing or different amount that currently exists. (100,000 samples per class) using full stroke-based data:
+- Train VAE for generation using 100,000 full stroke samples per class:
 `python main.py -m train -dm full -mt rnn -nspc 100000`
 `python main.py --mode train --data_mode full --model_type rnn --num_samples_per_class 100000`
 
@@ -96,9 +97,15 @@ Below are descriptions of the main command-line arguments for the `main.py` scri
 `python main.py -m train -dm full -mt rnn -nspc 100000 -pdp "quickdraw_data/vae_preprocessed-nspc100k/`
 `python main.py --mode train --data_mode full --model_type rnn --num_samples_per_class 100000 --processed_data_path "quickdraw_data/vae_preprocessed-nspc100k/"`
 
+- Train classifier on result final doodle images using reduced size rasterized images:
+`python main.py -m train -dm reduced -mt cnn -nspc 2000`
+`python main.py --mode train --data_mode reduced --model_type cnn --num_samples_per_class 10000`
+
 Once training is complete, you can generate new doodles or perform inference using trained models:
-- Generate doodles with a trained model (model path required):
-`python main.py -m generate -mt rnn -mp path/to/trained_model.pt`
+- Generate 1 doodle with a trained model (model path required, data path required to get scale to unnormalize data):
+`python main.py -m generate -np 1 -mt rnn -mp trained_models/DoodleGenRNN-epoch61-20241213-053650.pt -pdp "quickdraw_data/vae_preprocessed-nspc100k/"`
+**Note** this needs to use the preprocessed data that is saved from training
+**Note** if passing in 'all' for model_fp, will loop through all saved model_checkpoints
 
 - Classify/infer on a doodle with a trained model (model path required):
 `python main.py -m infer -dm reduced -mt cnn -mp path/to/trained_model.pt`

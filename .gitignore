@@ -2,9 +2,11 @@ quickdraw_data/*
 .quickdrawcache
 .hfcache
 
+trained_models/*
 
 output/figs/*
 output/model_ckpts/*
+output/generated/*
 output/sample_outputs/*
 output/model_metrics/*
 output/classifier_model/*
