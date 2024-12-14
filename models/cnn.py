@@ -184,11 +184,11 @@ def train_cnn(X, y, device, image_size, model_configs, subset_labels):
     batch_size = model_configs['batch_size']
     num_epochs = model_configs['num_epochs']
     learning_rate = model_configs['learning_rate']
-    patience = model_configs['patience']  # Early stopping patience
+    patience = model_configs.get('patience', 5)  # Early stopping patience
     class_names = subset_labels
 
     # Reshape X to include channel dimension
-    X = X.reshape(-1, 1, image_size, image_size)
+    X = X.reshape(-1, 1, image_size, image_size)  # Ensure shape is (N, 1, 28, 28)
     print(f"Reshaped X shape: {X.shape}")  # Debugging: Check new shape
 
     # Move data to device
@@ -216,9 +216,20 @@ def train_cnn(X, y, device, image_size, model_configs, subset_labels):
 
     # Early stopping variables
     best_val_loss = float('inf')
-    patience_counter = 0
-    best_model_weights = None
+    best_epoch = 0
+    patience_counter = 0  # Counter for early stopping
 
+    input_size = (1, 1, 28, 28)  # Batch size of 1, 1 channel, 28x28 image
+    # Generate the model summary
+    model_summary = summary(
+        model,
+        input_size=input_size,  # Single input example
+        col_names=["input_size", "output_size", "num_params", "trainable"],
+        verbose=1
+    )
+    print(model_summary)
+
+    # Training loop
     for epoch in range(num_epochs):
         train_loss, train_accuracy = train_model(model, train_loader, criterion, epoch, num_epochs, optimizer, device)
         val_loss, val_accuracy = validate_model(model, val_loader, criterion, epoch, num_epochs, device)
@@ -234,22 +245,40 @@ def train_cnn(X, y, device, image_size, model_configs, subset_labels):
         metrics['val']['loss'].append(val_loss)
         metrics['val']['accuracy'].append(val_accuracy)
 
-        # Early stopping logic
+        # Save model per epoch
+        cur_time = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        model_fp = "output/classifier_model/"
+        model_fn = f"classifierCNN_epoch{epoch+1}_{cur_time}"
+        os.makedirs(model_fp, exist_ok=True)
+
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': train_loss,
+            'val_loss': val_loss
+        }, model_fp + model_fn + '.pt')
+
+        # Create and save logs
+        with open(model_fp + model_fn + '.log', 'w', encoding='utf-8') as model_summary_file:
+            model_summary_file.write(str(model_summary))
+
+        # Metrics visualization and logging
+        log_dir = "output/classifier_model_metrics/"
+        plot_cnn_metrics(metrics, cur_time, epoch + 1, log_dir)
+        log_metrics(metrics, f'cnn_{cur_time}', log_dir)
+
+        # Early Stopping Logic
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_model_weights = model.state_dict()  # Save the best model weights
-            patience_counter = 0
+            best_epoch = epoch
+            patience_counter = 0  # Reset counter if validation improves
         else:
             patience_counter += 1
-            print(f"No improvement in validation loss for {patience_counter} epoch(s).")
-
-        if patience_counter >= patience:
-            print("Early stopping triggered.")
-            break
-
-    # Load best weights
-    if best_model_weights is not None:
-        model.load_state_dict(best_model_weights)
+            print(f"Early Stopping Counter: {patience_counter}/{patience}")
+            if patience_counter >= patience:
+                print(f"Early stopping triggered. Best epoch was {best_epoch+1} with val_loss: {best_val_loss:.4f}")
+                break
 
     # Final Test Metrics
     test_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
