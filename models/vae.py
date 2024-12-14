@@ -233,6 +233,7 @@ class DoodleGenRNN(nn.Module):
 
     def forward(self, x, seq_len, labels=None, inputs=None):
         mu, logvar = self.encode(x, seq_len) # encode input sequence
+        logvar = torch.clamp(logvar, min=-10, max=10)
         z = self.reparameterize(mu, logvar) # sample latent vector from encoded sequence
         decoder_output = self.decode(z, seq_len, inputs) # decode latent vector with label condition
         gmm_outputs = self.decoder_to_gmm_fc(decoder_output) # final fc layer connects decoder output to gmm params       
@@ -323,7 +324,7 @@ def train(
         optim.zero_grad() # zero previous iterations grads
         loss.backward() # back prop
         if grad_clip is not None:
-            nn.utils.clip_grad_value_(rnn.parameters(), grad_clip)
+            nn.utils.clip_grad_norm_(rnn.parameters(), grad_clip)
         optim.step() # take gradient step
         scheduler.step() # decrease lr
 
@@ -337,6 +338,7 @@ def train(
             kl_loss=running_div_train_loss / (batch_idx + 1),
             recon_loss=running_recon_train_loss / (batch_idx + 1)
         )
+    
 
     # log metrics
     n = len(train_loader)
