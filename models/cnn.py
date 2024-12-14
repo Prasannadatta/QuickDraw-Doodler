@@ -266,7 +266,7 @@ def train_cnn(X, y, device, image_size, model_configs, subset_labels):
         # Metrics visualization and logging
         log_dir = "output/classifier_model_metrics/"
         plot_cnn_metrics(metrics, cur_time, epoch + 1, log_dir)
-        log_metrics(metrics, f'cnn_{cur_time}', log_dir)
+        log_metrics(metrics, f'cnn_{cur_time}.log', log_dir)
 
         # Early Stopping Logic
         if val_loss < best_val_loss:
