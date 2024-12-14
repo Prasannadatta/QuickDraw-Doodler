@@ -51,6 +51,7 @@ class MDN:
         self.z_pi = output[..., :num_gmm_modes]  # Mixture weights
         self.z_mu_dx = output[..., num_gmm_modes:2*num_gmm_modes]
         self.z_mu_dy = output[..., 2*num_gmm_modes:3*num_gmm_modes]
+        #self.z_mu_dt = torch.exp(output[..., 3*num_gmm_modes:4*num_gmm_modes]) # enfore t positive
         self.z_mu_dt = output[..., 3*num_gmm_modes:4*num_gmm_modes]
         self.z_sigma_dx = output[..., 4*num_gmm_modes:5*num_gmm_modes]
         self.z_sigma_dy = output[..., 5*num_gmm_modes:6*num_gmm_modes]

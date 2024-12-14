@@ -15,6 +15,10 @@ These gifs are both from the same dataset (not generated). Here you can see how 
 
 ---
 
+## WIP
+
+- [ ] Enforce bounded distribution to sample dt (>=0)
+
 # Using The Project
 
 ## Preface
