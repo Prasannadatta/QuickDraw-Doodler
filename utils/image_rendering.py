@@ -119,7 +119,7 @@ def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_
     x = data[:, 0]
     y = data[:, 1]
     time = data[:, 2]
-    pen_state = data[:, 3]
+    pen_state = data[:, 4]
 
     if delta:
         dxy_std = dxy_std.numpy()
@@ -216,3 +216,5 @@ def animate_strokes(data, delta=True, use_actual_time=True, save_gif=False, num_
         print(f"Animation saved as {gif_fp}")
     else:
         plt.show()
+    plt.close()
+    

@@ -7,21 +7,27 @@ from scipy.stats import wasserstein_distance
 from scipy.special import rel_entr
 
 def compute_jsd_wd(real_data, gen_data, num_bins=400, epsilon=1e-10):
-    # Compute histograms
     hist_range = (min(real_data.min(), gen_data.min()), max(real_data.max(), gen_data.max()))
     hist_real, bin_edges = np.histogram(real_data, bins=num_bins, range=hist_range, density=True)
     hist_gen, _ = np.histogram(gen_data, bins=bin_edges, density=True)
     
-    # JSD
-    hist_real = np.asarray(hist_real, dtype=np.float64)
-    hist_gen = np.asarray(hist_gen, dtype=np.float64)
-    hist_real += epsilon # avoid log(0)
+    # Convert to discrete probabilities:
+    # hist_real.sum() and hist_gen.sum() should be ~1 (prob density)
+    bin_width = bin_edges[1] - bin_edges[0]
+    hist_real = hist_real * bin_width
+    hist_gen = hist_gen * bin_width
+    
+    # just in case it's not tho...
+    hist_real += epsilon
+    hist_real /= hist_real.sum()
     hist_gen += epsilon
+    hist_gen /= hist_gen.sum()
+
     m = 0.5 * (hist_real + hist_gen)
     jsd = 0.5 * (np.sum(rel_entr(hist_real, m)) + np.sum(rel_entr(hist_gen, m)))
-    normalized_jsd = 1 - (jsd / np.log(2))
-    
-    # WD
+    jsd_bits = jsd / np.log(2)
+    normalized_jsd = 1.0 - jsd_bits
+
     wd = wasserstein_distance(real_data, gen_data)
     return normalized_jsd, wd, bin_edges, hist_real, hist_gen
 
