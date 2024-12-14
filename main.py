@@ -62,7 +62,16 @@ def main():
         default=None,
         help="Optional to specify when training if you have ran the training code where data is downloaded and preprocessed in the dataloader"
     )
+
+    parser.add_argument(
+        '-ng', '--num_generations',
+        type=int,
+        default=1,
+        help="When generating samples, choose how many samples to generate (default 1)"
+    )
+
     args = parser.parse_args()
+
 
     # check model_path arg
     if args.mode in [Mode.GENERATE, Mode.CLASSIFY] and not args.model_path:
@@ -80,7 +89,7 @@ def main():
         handle_doodle_classification(args.model_type, args.model_path, device, subset_labels)
 
     if args.mode == Mode.GENERATE:
-        handle_doodle_generation(args.model_type, args.model_path, device, args.label)
+        handle_doodle_generation(args.model_path, device, args.processed_data_path)
 
     if args.mode == Mode.TRAIN:
         handle_model_training(subset_labels, args.data_mode, args.num_samples_per_class, args.model_type, device, args.processed_data_path)
