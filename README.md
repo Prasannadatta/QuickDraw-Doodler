@@ -1,3 +1,4 @@
+[![Paper](https://img.shields.io/badge/Paper-PDF-red)](./Project_Report.pdf)
 # QuickDraw-Doodler
 Novel extension of [Google's SketchRNN]([https://github.com/googlecreativelab/quickdraw-dataset](https://arxiv.org/abs/1704.03477)) to model spatial *and* temporal dimensions of hand drawn sketches. Final Project for ECS 271 Machine Learning and Discovery at UC Davis.
 
